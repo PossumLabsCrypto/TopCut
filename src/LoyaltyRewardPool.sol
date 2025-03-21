@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.19;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IPasselNFT} from "./interfaces/IPasselNFT.sol";
 
 // ============================================
 error FailedToSendNativeToken();
 error InsufficientReceived();
 error InvalidAffiliateID();
+error InvalidAmount();
 error InvalidMarket();
 error NotAuthorized();
 error Timelock();
-error TokenExists();
+error CeilingReached();
 // ============================================
 
-/// @title Loyalty Reward Pool
+/// @title TopCut Loyalty Reward Pool
 /// @author Possum Labs
 /**
  * @notice This contract receives ETH from TopCutMarket contracts
@@ -31,9 +34,16 @@ contract LoyaltyRewardPool {
     // ============================================
     // ==                STORAGE                 ==
     // ============================================
+    using SafeERC20 for IERC20;
+
     uint256 private constant TIMELOCK = 604800;
-    uint256 private constant MAX_AP_REDEEMED = 1e22; // 10k
+    uint256 private constant MAX_AP_REDEEMED = 1e22; // 10k, reached by 5k ETH trade volume via referrals
     uint256 private constant LOYALTY_DISTRIBUTION_PERCENT = 1;
+
+    IERC20 private constant PSM = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
+    uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M
+    uint256 private constant PSM_PROTECTION_CEILING = 1e28; // 10Bn = PSM total supply on L1
+    uint256 private totalPsmRedeemed;
 
     address public owner;
     address public pendingOwner;
@@ -48,7 +58,6 @@ contract LoyaltyRewardPool {
     address public loyaltyPointsLeader;
     uint256 public leadingPoints;
     mapping(address trader => uint256 points) public loyaltyPoints;
-
     uint256 nextDistributionTime;
 
     // ============================================
@@ -59,6 +68,8 @@ contract LoyaltyRewardPool {
 
     event LoyaltyPointsUpdated(address indexed trader, uint256 loyaltyPoints);
     event LoyaltyRewardDistributed(address indexed trader, uint256 reward);
+
+    event RedeemedPSM(address indexed user, uint256 amountPSM, uint256 reward);
 
     // ============================================
     // ==           OWNER FUNCTIONS              ==
@@ -84,7 +95,7 @@ contract LoyaltyRewardPool {
     }
 
     // ============================================
-    // ==          AFFILIATE FUNCTIONS           ==
+    // ==           AFFILIATE REWARDS            ==
     // ============================================
     ///@notice Returns the pending affiliate reward in ETH when redeeming all points of the given affiliate NFT ID
     ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
@@ -189,6 +200,48 @@ contract LoyaltyRewardPool {
 
             emit LoyaltyRewardDistributed(_recipient, loyaltyDistribution);
         }
+    }
+
+    // ============================================
+    // ==             POSSUM REWARDS             ==
+    // ============================================
+    ///@notice Returns the amount of ETH redeemable by a certain number of PSM
+    ///@dev PSM is exchanged for ETH from the pool contract
+    function getRedeemRewardPSM(uint256 _amountPSM) public view returns (uint256 ethReward) {
+        uint256 ethBalance = address(this).balance;
+
+        ///@dev Calculate the ETH received in exchange of PSM
+        ethReward = (ethBalance * _amountPSM) / PSM_REDEEM_DENOMINATOR;
+    }
+
+    ///@notice Allow PSM holders to redeem their PSM for ETH from the pool
+    ///@dev Exchange PSM for ETH from the pool where the PSM is stuck ("burned")
+    function redeemPSM(uint256 _amountPSM, uint256 _minReceived) external {
+        uint256 amount = _amountPSM;
+        // CHECKS
+        ///@dev Ensure that the PSM amount is within the logical maximum for a single transaction (100% of pool)
+        if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
+
+        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
+        if (totalPsmRedeemed >= PSM_PROTECTION_CEILING) revert CeilingReached();
+
+        ///@dev Ensure that the received amount matches the expected minimum
+        uint256 rewardsReceived = getRedeemRewardPSM(amount);
+        if (rewardsReceived < _minReceived) revert InsufficientReceived();
+
+        // EFFECTS
+        ///@dev Increase the redeemed PSM tracker
+        totalPsmRedeemed = totalPsmRedeemed + amount;
+
+        // INTERACTONS
+        ///@dev Take PSM from the user
+        PSM.safeTransferFrom(msg.sender, address(this), amount);
+
+        ///@dev Send ETH to the user
+        (bool sent,) = payable(msg.sender).call{value: rewardsReceived}("");
+        if (!sent) revert FailedToSendNativeToken();
+
+        emit RedeemedPSM(msg.sender, amount, rewardsReceived);
     }
 
     // ============================================
