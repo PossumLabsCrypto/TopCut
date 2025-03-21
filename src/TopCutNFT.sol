@@ -20,12 +20,10 @@ error InsufficientPayment();
  * The ETH is sent to the LoyaltyRewardPool
  */
 contract TopCutNFT is ERC721URIStorage {
-    constructor(address _loyaltyPool, string memory _name, string memory _symbol, string memory _metadataURI)
-        ERC721(_name, _symbol)
-    {
+    constructor(string memory _name, string memory _symbol, string memory _metadataURI) ERC721(_name, _symbol) {
+        LOYALTY_POOL = msg.sender;
         mintPriceETH = START_MINT_COST;
         metadataURI = _metadataURI;
-        LOYALTY_POOL = _loyaltyPool;
     }
 
     // ============================================

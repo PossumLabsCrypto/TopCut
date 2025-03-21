@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.19;
 
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IPasselNFT} from "./interfaces/IPasselNFT.sol";
 
 // ============================================
 error FailedToSendNativeToken();
 error InsufficientReceived();
+error InvalidAffiliateID();
 error InvalidMarket();
 error NotAuthorized();
 error Timelock();
+error TokenExists();
 // ============================================
 
 /// @title Loyalty Reward Pool
@@ -22,15 +24,13 @@ error Timelock();
  * The LoyaltyRewardPool has one associated and immutable Affiliate NFT collection to reward growth efforts
  */
 contract LoyaltyRewardPool {
-    constructor(address _topCutNFT) {
-        TOPCUT_NFT = IERC721(_topCutNFT);
+    constructor() {
         nextDistributionTime = block.timestamp + (4 * TIMELOCK);
     }
 
     // ============================================
     // ==                STORAGE                 ==
     // ============================================
-    IERC721 immutable TOPCUT_NFT;
     uint256 private constant TIMELOCK = 604800;
     uint256 private constant MAX_AP_REDEEMED = 1e22; // 10k
     uint256 private constant LOYALTY_DISTRIBUTION_PERCENT = 1;
@@ -41,6 +41,7 @@ contract LoyaltyRewardPool {
 
     mapping(address topCutMarket => bool isRegistered) public registeredMarkets;
 
+    IPasselNFT public constant AFFILIATE_NFT = IPasselNFT(0xa9c2833Bb3658Db2b0d7b3CC41D851b75E3508Cf);
     uint256 private totalRedeemedAP;
     mapping(uint256 nftID => uint256 points) public affiliatePoints;
 
@@ -76,6 +77,7 @@ contract LoyaltyRewardPool {
     }
 
     ///@notice Allow the owner to connect or disconnect markets from the LoyaltyRewardPool
+    ///@dev Ownership protected to prevent malicious markets to connect
     function updateMarketRegistry(address _market, bool _registryStatus) external {
         if (msg.sender != owner) revert NotAuthorized();
         registeredMarkets[_market] = _registryStatus;
@@ -84,6 +86,8 @@ contract LoyaltyRewardPool {
     // ============================================
     // ==          AFFILIATE FUNCTIONS           ==
     // ============================================
+    ///@notice Returns the pending affiliate reward in ETH when redeeming all points of the given affiliate NFT ID
+    ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
     function getAffiliateReward(uint256 _nftID) public view returns (uint256 ethReward) {
         uint256 points = affiliatePoints[_nftID];
         uint256 ethBalance = address(this).balance;
@@ -93,26 +97,26 @@ contract LoyaltyRewardPool {
         ethReward = (ethBalance * points) / newTotalAffiliatePoints;
     }
 
-    ///@notice Allow affiliates to claim the ETH rewards for their TopCut NFT
+    ///@notice Allow affiliates to claim the ETH rewards for their Affiliate NFT
     ///@dev Redeem Affiliate Points of an NFT and send ETH to the NFT owner
     function claimAffiliateReward(uint256 _nftID, uint256 _minReceived) external {
         // CHECKS
         ///@dev Check that the reward request comes from the NFT owner
-        if (msg.sender != TOPCUT_NFT.ownerOf(_nftID)) revert NotAuthorized();
+        if (msg.sender != AFFILIATE_NFT.ownerOf(_nftID)) revert NotAuthorized();
 
         ///@dev Ensure that the received amount matches the expected minimum
         uint256 rewardsReceived = getAffiliateReward(_nftID);
         if (rewardsReceived < _minReceived) revert InsufficientReceived();
 
         // EFFECTS
-        ///@dev Increase the redeemed affiliate point tracker until maximum
+        ///@dev Increase the redeemed point tracker until maximum
         if (totalRedeemedAP < MAX_AP_REDEEMED) {
             totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_nftID] < MAX_AP_REDEEMED)
                 ? totalRedeemedAP + affiliatePoints[_nftID]
                 : MAX_AP_REDEEMED;
         }
 
-        ///@dev Update the affiliate points
+        ///@dev Update the affiliate points of the NFT
         affiliatePoints[_nftID] = 0;
 
         // INTERACTONS
@@ -129,9 +133,14 @@ contract LoyaltyRewardPool {
     ///@notice Enable registered markets to update loyalty points of traders and affiliate points of NFTs
     ///@dev After updating the points, this function attempts to distribute the loyalty rewards of the current epoch
     function updateLoyaltyPoints(address _trader, uint256 _points, uint256 _nftID) external {
+        // CHECKS
         ///@dev Ensure only a registered market can call this function
         if (!registeredMarkets[msg.sender]) revert InvalidMarket();
 
+        ///@dev Ensure that the affiliate points can be assigned to an existing NFT
+        if (_nftID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
+
+        // EFFECTS
         ///@dev Update the trader's loyalty points
         uint256 newPoints = loyaltyPoints[_trader] + _points;
         loyaltyPoints[_trader] = newPoints;
@@ -146,6 +155,7 @@ contract LoyaltyRewardPool {
         uint256 newAffiliatePoints = affiliatePoints[_nftID] + _points;
         affiliatePoints[_nftID] = newAffiliatePoints;
 
+        // INTERACTIONS
         ///@dev Emit events for updating the loyalty and affiliate points
         emit LoyaltyPointsUpdated(_trader, newPoints);
         emit AffiliatePointsUpdated(_nftID, newAffiliatePoints);
@@ -155,8 +165,11 @@ contract LoyaltyRewardPool {
     }
 
     function distributeLoyaltyReward(address _recipient) private {
-        ///@dev Ensure that the current distribution epoch has ended & enter the next epoch
+        // CHECKS
+        ///@dev Ensure that the current distribution epoch has ended
         if (block.timestamp >= nextDistributionTime) {
+            // EFFECTS
+            ///@dev Set distribution time for the next epoch
             nextDistributionTime + TIMELOCK;
 
             ///@dev Calculate the reward to be distributed
@@ -168,8 +181,9 @@ contract LoyaltyRewardPool {
             loyaltyPointsLeader = address(0);
             leadingPoints = 0;
 
+            // INTERACTIONS
             ///@dev Send the ETH reward to the former points leader (recipient)
-            ///@dev Keep ETH in the contract if the transfer fails but execute function anyways
+            ///@dev Keep ETH in the contract if the transfer fails but execute the function anyways
             (bool sent,) = payable(_recipient).call{value: loyaltyDistribution}("");
             if (!sent) loyaltyDistribution = 0;
 
