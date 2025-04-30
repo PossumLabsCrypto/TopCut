@@ -5,8 +5,6 @@ import {IChainlink} from "./interfaces/IChainlink.sol";
 import {ITopCutVault} from "./interfaces/ITopCutVault.sol";
 
 // ============================================
-// ==                ERRORS                 ==
-// ============================================
 error activeCohort();
 error CohortFull();
 error FailedToSendWinnerReward();
@@ -21,6 +19,7 @@ error NoDistribution();
 error StaleOraclePrice();
 error WaitingToSettle();
 error ZeroAddress();
+// ============================================
 
 /// @title TopCut Precision Market
 /// @author Possum Labs
