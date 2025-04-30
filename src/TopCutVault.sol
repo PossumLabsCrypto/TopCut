@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity =0.8.19;
+pragma solidity 0.8.19;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IPasselNFT} from "./interfaces/IPasselNFT.sol";
+import {TopCutNFT} from "./TopCutNFT.sol";
+import {ITopCutNFT} from "./interfaces/ITopCutNFT.sol";
 
 // ============================================
+error Deadline();
 error FailedToSendNativeToken();
 error InsufficientReceived();
 error InvalidAffiliateID();
@@ -16,19 +18,24 @@ error Timelock();
 error CeilingReached();
 // ============================================
 
-/// @title TopCut Loyalty Reward Pool
+/// @title TopCut Vault
 /// @author Possum Labs
 /**
- * @notice This contract receives ETH from TopCutMarket contracts
+ * @notice This contract receives ETH from TopCut Markets to distributes Loyalty Rewards and Affiliate Rewards
  * Traders receive Loyalty Points when trading via a registered TopCutMarket
  * The owner can add and remove TopCutMarkets from the LoyaltyRewardPool
  * Every week, the trader with the most Loyalty Points receives 1% of the Reward Pool's ETH balance
  * The Loyalty Points of the trader receiving the weekly draw are reset to 0
  * The LoyaltyRewardPool has one associated and immutable Affiliate NFT collection to reward growth efforts
  */
-contract LoyaltyRewardPool {
-    constructor() {
+contract TopCutVault {
+    constructor(bytes32 _salt) {
         nextDistributionTime = block.timestamp + (4 * TIMELOCK);
+
+        ///@dev Deploy the affiliate NFT contract
+        TopCutNFT nft = new TopCutNFT{salt: _salt}("TopCut Affiliates", "TCA");
+        address nft_address = address(nft);
+        AFFILIATE_NFT = ITopCutNFT(nft_address);
     }
 
     // ============================================
@@ -36,13 +43,13 @@ contract LoyaltyRewardPool {
     // ============================================
     using SafeERC20 for IERC20;
 
-    uint256 private constant TIMELOCK = 604800;
-    uint256 private constant MAX_AP_REDEEMED = 1e22; // 10k, reached by 5k ETH trade volume via referrals
+    uint256 private constant TIMELOCK = 604800; // 7 days
+    uint256 private constant MAX_AP_REDEEMED = 1e24; // Reached after 1M ETH trade volume
     uint256 private constant LOYALTY_DISTRIBUTION_PERCENT = 1;
 
     IERC20 private constant PSM = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
-    uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M
-    uint256 private constant PSM_PROTECTION_CEILING = 1e28; // 10Bn = PSM total supply on L1
+    uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M PSM for 100% of vault
+    uint256 private constant PSM_CEILING = 1e28; // 10Bn = PSM max total supply as defined on L1
     uint256 private totalPsmRedeemed;
 
     address public owner;
@@ -51,14 +58,14 @@ contract LoyaltyRewardPool {
 
     mapping(address topCutMarket => bool isRegistered) public registeredMarkets;
 
-    IPasselNFT public constant AFFILIATE_NFT = IPasselNFT(0xa9c2833Bb3658Db2b0d7b3CC41D851b75E3508Cf);
+    ITopCutNFT public immutable AFFILIATE_NFT;
     uint256 private totalRedeemedAP;
     mapping(uint256 nftID => uint256 points) public affiliatePoints;
 
     address public loyaltyPointsLeader;
     uint256 public leadingPoints;
     mapping(address trader => uint256 points) public loyaltyPoints;
-    uint256 nextDistributionTime;
+    uint256 public nextDistributionTime;
 
     // ============================================
     // ==                EVENTS                  ==
@@ -99,8 +106,8 @@ contract LoyaltyRewardPool {
     // ============================================
     ///@notice Returns the pending affiliate reward in ETH when redeeming all points of the given affiliate NFT ID
     ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
-    function getAffiliateReward(uint256 _nftID) public view returns (uint256 ethReward) {
-        uint256 points = affiliatePoints[_nftID];
+    function getAffiliateReward(uint256 _refID) public view returns (uint256 ethReward) {
+        uint256 points = affiliatePoints[_refID];
         uint256 ethBalance = address(this).balance;
         uint256 newTotalAffiliatePoints = totalRedeemedAP + points;
 
@@ -110,46 +117,46 @@ contract LoyaltyRewardPool {
 
     ///@notice Allow affiliates to claim the ETH rewards for their Affiliate NFT
     ///@dev Redeem Affiliate Points of an NFT and send ETH to the NFT owner
-    function claimAffiliateReward(uint256 _nftID, uint256 _minReceived) external {
+    function claimAffiliateReward(uint256 _refID, uint256 _minReceived) external {
         // CHECKS
         ///@dev Check that the reward request comes from the NFT owner
-        if (msg.sender != AFFILIATE_NFT.ownerOf(_nftID)) revert NotAuthorized();
+        if (msg.sender != AFFILIATE_NFT.ownerOf(_refID)) revert NotAuthorized();
 
         ///@dev Ensure that the received amount matches the expected minimum
-        uint256 rewardsReceived = getAffiliateReward(_nftID);
+        uint256 rewardsReceived = getAffiliateReward(_refID);
         if (rewardsReceived < _minReceived) revert InsufficientReceived();
 
         // EFFECTS
-        ///@dev Increase the redeemed point tracker until maximum
+        ///@dev Increase the redeemed point tracker until maximum is reached
         if (totalRedeemedAP < MAX_AP_REDEEMED) {
-            totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_nftID] < MAX_AP_REDEEMED)
-                ? totalRedeemedAP + affiliatePoints[_nftID]
+            totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_refID] < MAX_AP_REDEEMED)
+                ? totalRedeemedAP + affiliatePoints[_refID]
                 : MAX_AP_REDEEMED;
         }
 
         ///@dev Update the affiliate points of the NFT
-        affiliatePoints[_nftID] = 0;
+        affiliatePoints[_refID] = 0;
 
         // INTERACTONS
         ///@dev Send the ETH reward to the affiliate
         (bool sent,) = payable(msg.sender).call{value: rewardsReceived}("");
         if (!sent) revert FailedToSendNativeToken();
 
-        emit AffiliateRewardsClaimed(_nftID, rewardsReceived);
+        emit AffiliateRewardsClaimed(_refID, rewardsReceived);
     }
 
     // ============================================
     // ==            LOYALTY REWARDS             ==
     // ============================================
-    ///@notice Enable registered markets to update loyalty points of traders and affiliate points of NFTs
+    ///@notice Allow registered markets to update loyalty points of traders and affiliate points of NFTs
     ///@dev After updating the points, this function attempts to distribute the loyalty rewards of the current epoch
-    function updateLoyaltyPoints(address _trader, uint256 _points, uint256 _nftID) external {
+    function updatePoints(address _trader, uint256 _points, uint256 _refID) external {
         // CHECKS
         ///@dev Ensure only a registered market can call this function
         if (!registeredMarkets[msg.sender]) revert InvalidMarket();
 
         ///@dev Ensure that the affiliate points can be assigned to an existing NFT
-        if (_nftID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
+        if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
 
         // EFFECTS
         ///@dev Update the trader's loyalty points
@@ -163,21 +170,22 @@ contract LoyaltyRewardPool {
         }
 
         ///@dev Update the points of the affiliate NFT
-        uint256 newAffiliatePoints = affiliatePoints[_nftID] + _points;
-        affiliatePoints[_nftID] = newAffiliatePoints;
+        uint256 newAffiliatePoints = affiliatePoints[_refID] + _points;
+        affiliatePoints[_refID] = newAffiliatePoints;
 
         // INTERACTIONS
         ///@dev Emit events for updating the loyalty and affiliate points
         emit LoyaltyPointsUpdated(_trader, newPoints);
-        emit AffiliatePointsUpdated(_nftID, newAffiliatePoints);
+        emit AffiliatePointsUpdated(_refID, newAffiliatePoints);
 
         ///@dev Attempt to distribute the loyalty reward and move to the next epoch
-        distributeLoyaltyReward(loyaltyPointsLeader);
+        _distributeLoyaltyReward(loyaltyPointsLeader);
     }
 
-    function distributeLoyaltyReward(address _recipient) private {
+    ///@notice Internal function to distribute the Loyalty Reward to the winner of the epoch
+    function _distributeLoyaltyReward(address _recipient) private {
         // CHECKS
-        ///@dev Ensure that the current distribution epoch has ended
+        ///@dev Check if the current distribution epoch has ended, otherwise skip to end
         if (block.timestamp >= nextDistributionTime) {
             // EFFECTS
             ///@dev Set distribution time for the next epoch
@@ -194,7 +202,7 @@ contract LoyaltyRewardPool {
 
             // INTERACTIONS
             ///@dev Send the ETH reward to the former points leader (recipient)
-            ///@dev Keep ETH in the contract if the transfer fails but execute the function anyways
+            ///@dev Keep ETH in the contract if the transfer fails but continue anyways (prevent DOS)
             (bool sent,) = payable(_recipient).call{value: loyaltyDistribution}("");
             if (!sent) loyaltyDistribution = 0;
 
@@ -205,25 +213,30 @@ contract LoyaltyRewardPool {
     // ============================================
     // ==             POSSUM REWARDS             ==
     // ============================================
-    ///@notice Returns the amount of ETH redeemable by a certain number of PSM
-    ///@dev PSM is exchanged for ETH from the pool contract
+    ///@notice Returns the amount of ETH received by redeeming a given number of PSM
+    ///@dev PSM is exchanged for ETH from the TopCut Vault
     function getRedeemRewardPSM(uint256 _amountPSM) public view returns (uint256 ethReward) {
         uint256 ethBalance = address(this).balance;
-
-        ///@dev Calculate the ETH received in exchange of PSM
-        ethReward = (ethBalance * _amountPSM) / PSM_REDEEM_DENOMINATOR;
-    }
-
-    ///@notice Allow PSM holders to redeem their PSM for ETH from the pool
-    ///@dev Exchange PSM for ETH from the pool where the PSM is stuck ("burned")
-    function redeemPSM(uint256 _amountPSM, uint256 _minReceived) external {
         uint256 amount = _amountPSM;
-        // CHECKS
-        ///@dev Ensure that the PSM amount is within the logical maximum for a single transaction (100% of pool)
+
+        ///@dev Ensure that the PSM amount is within the logical maximum for a single transaction (100% of Vault)
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
-        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
-        if (totalPsmRedeemed >= PSM_PROTECTION_CEILING) revert CeilingReached();
+        ///@dev Calculate the ETH received in exchange of PSM
+        ethReward = (ethBalance * amount) / PSM_REDEEM_DENOMINATOR;
+    }
+
+    ///@notice Allow PSM holders to redeem their PSM for ETH from the TopCut Vault
+    ///@dev Exchange PSM for ETH from the TopCut Vault where the PSM is stuck ("burned")
+    function redeemPSM(uint256 _amountPSM, uint256 _minReceived, uint256 _deadline) external {
+        uint256 amount = _amountPSM;
+        // CHECKS
+        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints & check deadline
+        if (totalPsmRedeemed >= PSM_CEILING) revert CeilingReached();
+        if (_deadline < block.timestamp) revert Deadline();
+
+        ///@dev Ensure that the PSM amount is within the logical maximum for a single transaction (100% of Vault)
+        if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
         ///@dev Ensure that the received amount matches the expected minimum
         uint256 rewardsReceived = getRedeemRewardPSM(amount);
