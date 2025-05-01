@@ -23,6 +23,11 @@ contract TopCutNFT is ERC721URIStorage {
     constructor(string memory _name, string memory _symbol) ERC721(_name, _symbol) {
         TOP_CUT_VAULT = msg.sender;
         mintPriceETH = START_MINT_PRICE;
+
+        // Mint initial 10 NFTs to the treasury
+        for (uint256 i = 0; i < 10; i++) {
+            _mintInitial();
+        }
     }
 
     // ============================================
@@ -30,6 +35,8 @@ contract TopCutNFT is ERC721URIStorage {
     // ============================================
     uint256 private constant START_MINT_PRICE = 1e17; // 0.1 ETH
     uint256 private constant MINT_PRICE_INCREASE = 1e16; // +0.01 ETH per mint
+    address private constant TREASURY = 0xa0BFD02a7a47CBCA7230E03fbf04A196C3E771E3;
+
     address public immutable TOP_CUT_VAULT;
     string public metadataURI = "420g02n230f203f"; ////////// -------------------->>> UPDATE IPFS METADATA
 
@@ -57,5 +64,15 @@ contract TopCutNFT is ERC721URIStorage {
         uint256 contractBalance = address(this).balance;
         (bool sent,) = payable(TOP_CUT_VAULT).call{value: contractBalance}("");
         if (!sent) revert FailedToSendNativeToken();
+    }
+
+    ///@notice Internal function to mint the starting supply to the treasury
+    function _mintInitial() private returns (uint256 nftID) {
+        _safeMint(TREASURY, totalSupply);
+        _setTokenURI(totalSupply, metadataURI);
+
+        ///@dev Update supply and price trackers
+        nftID = totalSupply;
+        totalSupply++;
     }
 }
