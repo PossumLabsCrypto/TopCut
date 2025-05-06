@@ -57,6 +57,7 @@ contract TopCutVault {
     uint256 public timelockEnd;
 
     mapping(address topCutMarket => bool isRegistered) public registeredMarkets;
+    mapping(address topCutMarket => uint256 timestamp) public lastChanged;
 
     ITopCutNFT public immutable AFFILIATE_NFT;
     uint256 private totalRedeemedAP;
@@ -94,11 +95,14 @@ contract TopCutVault {
         pendingOwner = address(0);
     }
 
-    ///@notice Allow the owner to connect or disconnect markets from the LoyaltyRewardPool
+    ///@notice Allow the owner to connect or disconnect markets from the Vault
     ///@dev Ownership protected to prevent malicious markets to connect
+    ///@dev Enforce a timelock between changing market status to prevent systematic interference by malicious owner
     function updateMarketRegistry(address _market, bool _registryStatus) external {
         if (msg.sender != owner) revert NotAuthorized();
+        if (block.timestamp < lastChanged[_market] + TIMELOCK) revert Timelock();
         registeredMarkets[_market] = _registryStatus;
+        lastChanged[_market] = block.timestamp;
     }
 
     // ============================================
@@ -150,7 +154,7 @@ contract TopCutVault {
     // ============================================
     ///@notice Allow registered markets to update loyalty points of traders and affiliate points of NFTs
     ///@dev After updating the points, this function attempts to distribute the loyalty rewards of the current epoch
-    function updatePoints(address _trader, uint256 _points, uint256 _refID) external {
+    function updatePoints(address _trader, uint256 _refID) external payable {
         // CHECKS
         ///@dev Ensure only a registered market can call this function
         if (!registeredMarkets[msg.sender]) revert InvalidMarket();
@@ -159,8 +163,11 @@ contract TopCutVault {
         if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
 
         // EFFECTS
+        ///@dev Calculate the trader's added loyalty points based on received ETH
+        uint256 accruedPoints = msg.value * 20;
+
         ///@dev Update the trader's loyalty points
-        uint256 newPoints = loyaltyPoints[_trader] + _points;
+        uint256 newPoints = loyaltyPoints[_trader] + accruedPoints;
         loyaltyPoints[_trader] = newPoints;
 
         ///@dev Check if the trader becomes the new active point leader
@@ -170,7 +177,7 @@ contract TopCutVault {
         }
 
         ///@dev Update the points of the affiliate NFT
-        uint256 newAffiliatePoints = affiliatePoints[_refID] + _points;
+        uint256 newAffiliatePoints = affiliatePoints[_refID] + accruedPoints;
         affiliatePoints[_refID] = newAffiliatePoints;
 
         // INTERACTIONS

@@ -10,12 +10,12 @@ error CohortFull();
 error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
 error FailedToSendKeeperReward();
-error FailedToSendVaultReward();
+error FailedToSkimSurplus();
 error InsufficientBalance();
 error InvalidConstructor();
 error InvalidPrice();
 error InvalidTradeSize();
-error NoDistribution();
+error NoClaims();
 error StaleOraclePrice();
 error WaitingToSettle();
 error ZeroAddress();
@@ -31,7 +31,6 @@ contract TopCutMarket {
     constructor(
         address _oracleContract,
         address _topCutVault,
-        uint256 _win_multiple,
         uint256 _maxCohortSize,
         uint256 _tradeSize,
         uint256 _tradeDuration,
@@ -46,14 +45,14 @@ contract TopCutMarket {
 
         if (_maxCohortSize < 330 || _maxCohortSize > 3300) revert InvalidConstructor();
         MAX_COHORT_SIZE = _maxCohortSize;
-        uint256 max_winners = _maxCohortSize / (_win_multiple + 1);
+        uint256 max_winners = _maxCohortSize / (11);
 
         if (_tradeDuration < 86400) revert InvalidConstructor(); // min 24h
         TRADE_DURATION = _tradeDuration;
 
         if (_tradeSize == 0) revert InvalidConstructor();
         TRADE_SIZE = _tradeSize;
-        WIN_SIZE = TRADE_SIZE * _win_multiple;
+        WIN_SIZE = _tradeSize * 10;
 
         if (_firstSettlementTime < block.timestamp + _tradeDuration * 3) revert InvalidConstructor();
         FIRST_SETTLEMENT = _firstSettlementTime;
@@ -70,52 +69,46 @@ contract TopCutMarket {
     IChainlink private immutable ORACLE;
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
-    // BTC/USD price feed on Arb 0x6ce185860a4963106506C203335A2910413708e9
-    // ETH/USD price feed on Arb 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612
-    // DOGE/USD price feed on Arb 0x9A7FB1b3950837a8D9b40517626E11D4127C098C^
-    // PEPE/USD price feed on Arb 0x02DEd5a7EDDA750E3Eb240b54437a54d57b74dBE
-    // LINK/USD price feed on Arb 0x86E53CF1B870786351Da77A57575e79CB55812CB
-    // ARB/USD price feed on Arb 0xb2A824043730FE05F3DA2efaFa1CBbe83fa548D6
-
     uint256 private immutable MAX_COHORT_SIZE;
     uint256 private immutable FIRST_SETTLEMENT;
 
     uint256 private cohortSize; // Tracks trades in a cohort
     uint256 private activeCohortID; // ID of the current cohort that accepts predictions
 
-    uint256 private constant PRECISION = 1000;
-    uint256 private constant VAULT_SHARE = 60; // 6% of trade volume
-    uint256 private constant FRONTEND_SHARE = 20; // 2% of trade volume
-    uint256 private constant KEEPER_SHARE = 5; // in total ca. 1% of trade volume (x2 functions)
+    uint256 public constant SHARE_PRECISION = 1000;
+    uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
+    uint256 public constant SHARE_FRONTEND = 30; // 3% of trade volume
+    uint256 public constant SHARE_KEEPER = 10; // 1% of trade volume
 
     ITopCutVault public immutable TOP_CUT_VAULT;
-    uint256 public constant PREDICTION_DECIMALS = 18; // Decimals of the price input by traders - oracle price is normalized to match
     uint256 public immutable TRADE_DURATION; // The duration when no new trades are accepted before a cohort is settled
     uint256 public immutable TRADE_SIZE; // The amount of ETH that traders pay for each prediction
     uint256 public immutable WIN_SIZE; // Winning trades get back 10x of the TradeSize
+    uint256 public constant PREDICTION_DECIMALS = 18; // Decimals of the price input by traders - oracle price is normalized to match
 
-    uint256 public nextSettlement; // Time after which the winners of the current Cohort can be determined
-
+    uint256 public nextSettlement; // Time when the current Cohort can be settled
     mapping(uint256 tradeID => uint256 prediction) public predictions; // Predictions to evaluate
-    mapping(uint256 tradeID => address user) public predictionOwners; // Who submitted each value
-    mapping(address winner => uint256 winTrades) public distributions; // How many payouts a winner can receive
+    mapping(uint256 tradeID => address user) public predictionOwners; // Who submitted each prediction
+    mapping(address winner => uint256 profit) public claimAmounts; // Amount of ETH payouts a winner can receive
+    uint256 public totalPendingClaims; // Sum of all users claim amounts
     address[] public winnersList; // Top-N best accuracy prediction owners
 
     // ============================================
     // ==                EVENTS                  ==
     // ============================================
+    event PredictionPosted(address indexed user, uint256 indexed price);
     event CohortSettled(uint256 indexed cohortID, uint256 cohortSize, uint256 winners, uint256 keeperShare);
-    event PendingDistributions(address indexed user, uint256 pendingDistributionCounter);
+    event PendingClaims(address indexed user, uint256 pendingClaimAmount);
 
     // ============================================
     // ==            WRITE FUNCTIONS             ==
     // ============================================
     ///@notice Traders enter their price predictions and pay ETH according to TradeSize
-    ///@dev Frontends should add their wallet address to receive a volume share as compensation for the service
+    ///@dev Frontends add their wallet address to receive a volume share as compensation for providing access
     ///@dev A referral ID must be assigned with each trade and it must be an existing TopCut NFT ID
     ///@dev Predictions are not accepted within TRADE_DURATION before settlement
     function castPrediction(address _frontend, uint256 _refID, uint256 _price) external payable {
-        address trader = msg.sender;
+        address user = msg.sender;
         uint256 tradeSize = msg.value;
 
         // CHECKS
@@ -126,34 +119,33 @@ contract TopCutMarket {
         ///@dev Ensure ceiling of the cohort size is maintained
         if (cohortSize == MAX_COHORT_SIZE) revert CohortFull();
 
-        ///@dev Enforce uniform trade size of each prediction
-        if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
-
         ///@dev Ensure that predictions can only be cast if there is at least TRADE_DURATION seconds until settlement
         if (block.timestamp + TRADE_DURATION > nextSettlement) revert WaitingToSettle();
+
+        ///@dev Enforce uniform trade size of each prediction
+        if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
 
         // EFFECTS
         ///@dev Save the prediction and trader in storage
         predictions[cohortSize] = _price;
-        predictionOwners[cohortSize] = trader;
+        predictionOwners[cohortSize] = user;
 
         ///@dev Increase the counter of this cohort
         cohortSize += 1;
 
         // INTERACTIONS
         ///@dev Update the user's Loyalty Points and referrers Affiliate Points in the TopCut Vault
-        TOP_CUT_VAULT.updatePoints(trader, tradeSize, _refID);
-
-        ///@dev Send Vault share
-        bool sent;
-        uint256 vaultReward = (tradeSize * VAULT_SHARE) / PRECISION;
-        (sent,) = payable(msg.sender).call{value: vaultReward}("");
-        if (!sent) revert FailedToSendVaultReward();
+        ///@dev Send the Vault share with the function call
+        uint256 vaultReward = (tradeSize * SHARE_VAULT) / SHARE_PRECISION;
+        TOP_CUT_VAULT.updatePoints{value: vaultReward}(user, _refID);
 
         ///@dev Send frontend reward
-        uint256 frontendReward = (tradeSize * FRONTEND_SHARE) / PRECISION;
-        (sent,) = payable(msg.sender).call{value: frontendReward}("");
+        uint256 frontendReward = (tradeSize * SHARE_FRONTEND) / SHARE_PRECISION;
+        (bool sent,) = payable(msg.sender).call{value: frontendReward}("");
         if (!sent) revert FailedToSendFrontendReward();
+
+        ///@dev Emit event that informs about this prediction
+        emit PredictionPosted(user, _price);
     }
 
     ///@notice Find the winning predictions of the active Cohort and save in storage
@@ -219,13 +211,17 @@ contract TopCutMarket {
             for (uint256 i = 0; i < cohortWinners; i++) {
                 winnersList[i] = owners[i];
 
-                ///@dev Update the pending distribution counter for each winning address
-                uint256 _distributions = distributions[owners[i]] + 1;
-                distributions[owners[i]] = _distributions;
+                ///@dev Update the pending claim amount for each winning address
+                uint256 _claimAmount = claimAmounts[owners[i]] + WIN_SIZE;
+                claimAmounts[owners[i]] = _claimAmount;
 
-                ///@dev Emit event to notify keepers of the new pending distributions
-                emit PendingDistributions(owners[i], _distributions);
+                ///@dev Emit event to notify keepers of the new pending claims
+                emit PendingClaims(owners[i], _claimAmount);
             }
+
+            ///@dev Update the global tracker of pending claims
+            uint256 addedClaims = cohortWinners * WIN_SIZE;
+            totalPendingClaims += addedClaims;
         }
 
         ///@dev Advance the Cohort so that new predictions are possible
@@ -241,8 +237,8 @@ contract TopCutMarket {
         cohortSize = 0;
 
         // INTERACTIONS
-        ///@dev Compensate the keeper
-        uint256 keeperReward = (address(this).balance * KEEPER_SHARE) / PRECISION;
+        ///@dev Compensate the keeper based on the volume of the Cohort
+        uint256 keeperReward = (_cohortSize * TRADE_SIZE * SHARE_KEEPER) / SHARE_PRECISION;
         (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
         if (!sent) revert FailedToSendKeeperReward();
 
@@ -250,48 +246,60 @@ contract TopCutMarket {
         emit CohortSettled(cohort, _cohortSize, cohortWinners, keeperReward);
     }
 
-    ///@notice Distribute ETH to a winner
-    ///@dev Compensate a permissionless keeper to trigger payouts
-    function distribute(address _user) external {
+    ///@notice Enable users to claim their profits
+    function claim() external {
         // CHECKS
-        ///@dev Ensure that the user has pending distributions
-        uint256 amount = getDistribution(_user);
-        if (amount == 0) revert NoDistribution();
+        ///@dev Ensure that the user has pending claims
+        address user = msg.sender;
+        uint256 amount = claimAmounts[user];
+        if (amount == 0) revert NoClaims();
 
-        ///@dev Ensure that the contract has enough balance to pay the distribution and keeper
+        ///@dev Ensure that the contract has enough ETH
         uint256 balance = address(this).balance;
-        uint256 keeperReward = (amount * KEEPER_SHARE) / PRECISION;
-        if (amount + keeperReward > balance) revert InsufficientBalance();
+        if (amount > balance) revert InsufficientBalance();
 
         // EFFECTS
-        ///@dev Reset the distribution tracker of the user
-        distributions[_user] = 0;
+        ///@dev Update the pending claims
+        claimAmounts[user] = 0;
+
+        ///@dev Update the global tracker of pending claims
+        totalPendingClaims -= amount;
 
         // INTERACTIONS
         ///@dev Distribute ETH to the user
-        bool sent;
-        (sent,) = payable(_user).call{value: amount}("");
+        (bool sent,) = payable(user).call{value: amount}("");
         if (!sent) revert FailedToSendWinnerReward();
 
-        ///@dev Compensate the keeper
-        (sent,) = payable(msg.sender).call{value: keeperReward}("");
-        if (!sent) revert FailedToSendKeeperReward();
-
         ///@dev Update the pending distributions
-        emit PendingDistributions(_user, 0);
+        emit PendingClaims(user, 0);
+    }
+
+    ///@notice Send surplus ETH balance to the Vault
+    ///@dev Make use of ETH in the contract that is not required to cover pending claims
+    ///@dev A small surplus occurs frequently when rounding down winners per Cohort (cohortSize / 11)
+    ///@dev A deficit occurs when cohortSize < 11 which is offset with increasing participants later
+    function skimSurplus() external {
+        ///@dev Check for surplus ETH balance
+        uint256 balance = address(this).balance;
+        uint256 surplusBalance = (totalPendingClaims < balance) ? balance - totalPendingClaims : 0;
+
+        if (surplusBalance > 0) {
+            uint256 keeperReward = surplusBalance / 20;
+            uint256 sendAmount = surplusBalance - keeperReward;
+
+            ///@dev Send 95% of surplus ETH to the Vault
+            (bool sent,) = payable(address(TOP_CUT_VAULT)).call{value: sendAmount}("");
+            if (!sent) revert FailedToSkimSurplus();
+
+            ///@dev Send keeper incentive (5%) -> larger share than for settlement because low value transactions
+            (sent,) = payable(msg.sender).call{value: keeperReward}("");
+            if (!sent) revert FailedToSkimSurplus();
+        }
     }
 
     // ============================================
     // ==             READ FUNCTIONS             ==
     // ============================================
-    ///@notice Check if an address expects distributions from winning trades
-    ///@return distributionAmount The amount of ETH receiveable by the user
-    function getDistribution(address _user) public view returns (uint256 distributionAmount) {
-        ///@dev Calculate the distribution amount
-        uint256 pending = distributions[_user];
-        distributionAmount = pending * WIN_SIZE;
-    }
-
     /// @notice Find the index of the largest number in a memory array
     function findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
         ///@dev Presume that the largest number is at index 0, then search rest of the array
