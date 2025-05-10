@@ -277,11 +277,17 @@ contract TopCutMarket {
     ///@notice Send surplus ETH balance to the Vault
     ///@dev Make use of ETH in the contract that is not required to cover pending claims
     ///@dev A small surplus occurs frequently when rounding down winners per Cohort (cohortSize / 11)
-    ///@dev A deficit occurs when cohortSize < 11 which is offset with increasing participants later
+    ///@dev A deficit occurs if cohortSize < 11 which is offset by more participants later
     function skimSurplus() external {
-        ///@dev Check for surplus ETH balance
         uint256 balance = address(this).balance;
-        uint256 surplusBalance = (totalPendingClaims < balance) ? balance - totalPendingClaims : 0;
+        uint256 reservedTradeVolume = (
+            cohortSize * TRADE_SIZE * (SHARE_PRECISION - (SHARE_VAULT + SHARE_FRONTEND + SHARE_KEEPER))
+        ) / SHARE_PRECISION;
+
+        ///@dev Check for surplus ETH balance
+        uint256 surplusBalance = ((totalPendingClaims + reservedTradeVolume) < balance)
+            ? balance - (totalPendingClaims + reservedTradeVolume)
+            : 0;
 
         if (surplusBalance > 0) {
             uint256 keeperReward = surplusBalance / 20;

@@ -24,8 +24,8 @@ contract TopCutNFT is ERC721URIStorage {
         TOP_CUT_VAULT = msg.sender;
         mintPriceETH = START_MINT_PRICE;
 
-        // Mint initial 10 NFTs to the treasury
-        for (uint256 i = 0; i < 10; i++) {
+        // Mint initial NFT budget to the treasury
+        for (uint256 i = 0; i < 40; i++) {
             _mintInitial();
         }
     }
