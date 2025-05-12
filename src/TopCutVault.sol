@@ -36,6 +36,8 @@ contract TopCutVault {
         TopCutNFT nft = new TopCutNFT{salt: _salt}("TopCut Affiliates", "TCA");
         address nft_address = address(nft);
         AFFILIATE_NFT = ITopCutNFT(nft_address);
+
+        totalRedeemedAP = 1e19; // Set starting value eq 10 ETH
     }
 
     // ============================================
@@ -73,6 +75,11 @@ contract TopCutVault {
     // ============================================
     // ==                EVENTS                  ==
     // ============================================
+    event OwnerTransferStarted(address newOwner, uint256 acceptanceTime);
+    event OwnerTransferCompleted(address newOwner);
+
+    event MarketStatusUpdated(address indexed market, bool registered, uint256 lastUpdateTime);
+
     event AffiliatePointsUpdated(uint256 indexed nftID, uint256 affiliatePoints);
     event AffiliateRewardsClaimed(uint256 indexed nftID, uint256 reward);
 
@@ -84,17 +91,23 @@ contract TopCutVault {
     // ============================================
     // ==           OWNER FUNCTIONS              ==
     // ============================================
+    ///@notice Initiate an ownership transfer with a timelock
     function transferOwnership(address _newOwner) external {
         if (msg.sender != owner) revert NotAuthorized();
         pendingOwner = _newOwner;
         timelockEnd = block.timestamp + TIMELOCK;
+
+        emit OwnerTransferStarted(_newOwner, timelockEnd);
     }
 
+    ///@notice The new owner must accept ownership after the timelock ended
     function acceptOwnership() external {
         if (msg.sender != pendingOwner) revert NotAuthorized();
-        if (timelockEnd > block.timestamp) revert Timelock();
+        if (block.timestamp < timelockEnd) revert Timelock();
         owner = pendingOwner;
         pendingOwner = address(0);
+
+        emit OwnerTransferCompleted(owner);
     }
 
     ///@notice Allow the owner to connect or disconnect markets from the Vault
@@ -105,6 +118,8 @@ contract TopCutVault {
         if (block.timestamp < lastChanged[_market] + TIMELOCK) revert Timelock();
         registeredMarkets[_market] = _registryStatus;
         lastChanged[_market] = block.timestamp;
+
+        emit MarketStatusUpdated(_market, _registryStatus, block.timestamp);
     }
 
     // ============================================
