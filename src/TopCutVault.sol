@@ -246,7 +246,7 @@ contract TopCutVault {
     // ============================================
     ///@notice Returns the amount of ETH received by redeeming a given number of PSM
     ///@dev PSM is exchanged for ETH from the TopCut Vault
-    function getRedeemRewardPSM(uint256 _amountPSM) public view returns (uint256 ethReward) {
+    function quoteRedeemPSM(uint256 _amountPSM) public view returns (uint256 ethOut) {
         uint256 ethBalance = address(this).balance;
         uint256 amount = _amountPSM;
 
@@ -254,7 +254,7 @@ contract TopCutVault {
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
         ///@dev Calculate the ETH received in exchange of PSM
-        ethReward = (ethBalance * amount) / PSM_REDEEM_DENOMINATOR;
+        ethOut = (ethBalance * amount) / PSM_REDEEM_DENOMINATOR;
     }
 
     ///@notice Allow PSM holders to redeem their PSM for ETH from the TopCut Vault
@@ -270,8 +270,8 @@ contract TopCutVault {
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
         ///@dev Ensure that the received amount matches the expected minimum
-        uint256 rewardsReceived = getRedeemRewardPSM(amount);
-        if (rewardsReceived < _minReceived) revert InsufficientReceived();
+        uint256 received = quoteRedeemPSM(amount);
+        if (received < _minReceived) revert InsufficientReceived();
 
         // EFFECTS
         ///@dev Increase the redeemed PSM tracker
@@ -282,10 +282,10 @@ contract TopCutVault {
         PSM.safeTransferFrom(msg.sender, address(this), amount);
 
         ///@dev Send ETH to the user
-        (bool sent,) = payable(msg.sender).call{value: rewardsReceived}("");
+        (bool sent,) = payable(msg.sender).call{value: received}("");
         if (!sent) revert FailedToSendNativeToken();
 
-        emit RedeemedPSM(msg.sender, amount, rewardsReceived);
+        emit RedeemedPSM(msg.sender, amount, received);
     }
 
     // ============================================
