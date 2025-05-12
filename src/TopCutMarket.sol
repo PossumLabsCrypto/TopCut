@@ -279,18 +279,7 @@ contract TopCutMarket {
     ///@dev A small surplus occurs frequently when rounding down winners per Cohort (cohortSize / 11)
     ///@dev A deficit occurs if cohortSize < 11 which is offset by more participants later
     function skimSurplus() external {
-        uint256 balance = address(this).balance;
-
-        ///@dev Calculate balance associated with active trades + buffer
-        uint256 reservedTradeVolume = (
-            cohortSize * TRADE_SIZE * (SHARE_PRECISION - (SHARE_VAULT + SHARE_FRONTEND + SHARE_KEEPER))
-        ) / SHARE_PRECISION;
-        uint256 buffer = WIN_SIZE;
-
-        ///@dev Check for surplus ETH balance
-        uint256 surplusBalance = ((totalPendingClaims + reservedTradeVolume + buffer) < balance)
-            ? balance - (totalPendingClaims + reservedTradeVolume + buffer)
-            : 0;
+        uint256 surplusBalance = getSurplus();
 
         if (surplusBalance > 0) {
             uint256 keeperReward = surplusBalance / 20; // 5% of surplus
@@ -300,7 +289,7 @@ contract TopCutMarket {
             (bool sent,) = payable(address(TOP_CUT_VAULT)).call{value: sendAmount}("");
             if (!sent) revert FailedToSkimSurplus();
 
-            ///@dev Send keeper incentive (larger share than for settlement because low value transactions)
+            ///@dev Send keeper incentive (larger share than settlement because low value transactions)
             (sent,) = payable(msg.sender).call{value: keeperReward}("");
             if (!sent) revert FailedToSkimSurplus();
         }
@@ -309,6 +298,23 @@ contract TopCutMarket {
     // ============================================
     // ==             READ FUNCTIONS             ==
     // ============================================
+    ///@notice Calculate and return the current surplus balance that can be skimmed to the TopCut Vault
+    function getSurplus() public view returns (uint256 surplus) {
+        uint256 balance = address(this).balance;
+
+        ///@dev Calculate balance associated with active trades + buffer
+        uint256 reservedTradeVolume = (
+            cohortSize * TRADE_SIZE * (SHARE_PRECISION - (SHARE_VAULT + SHARE_FRONTEND + SHARE_KEEPER))
+        ) / SHARE_PRECISION;
+
+        uint256 buffer = WIN_SIZE;
+
+        ///@dev Check for surplus ETH balance
+        surplus = ((totalPendingClaims + reservedTradeVolume + buffer) < balance)
+            ? balance - (totalPendingClaims + reservedTradeVolume + buffer)
+            : 0;
+    }
+
     /// @notice Find the index of the largest number in a memory array
     function findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
         ///@dev Presume that the largest number is at index 0, then search rest of the array
