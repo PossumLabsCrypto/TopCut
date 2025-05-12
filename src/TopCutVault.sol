@@ -65,8 +65,10 @@ contract TopCutVault {
 
     address public loyaltyPointsLeader;
     uint256 public leadingPoints;
-    mapping(address trader => uint256 points) public loyaltyPoints;
     uint256 public nextDistributionTime;
+
+    mapping(address trader => uint256 points) public loyaltyPoints;
+    mapping(address trader => uint256 refID) public refRecords;
 
     // ============================================
     // ==                EVENTS                  ==
@@ -176,14 +178,22 @@ contract TopCutVault {
             leadingPoints = newPoints;
         }
 
+        ///@dev Permanently connect the trader to the affiliate
+        uint256 refID = refRecords[_trader];
+        refID = (refID == 0) ? _refID : refID;
+
+        ///@dev Update the referrer if it changes from 0 to a different ID
+        ///@dev Only ref ID 0 can be overwritten (default) all other connections are permanent
+        if (refRecords[_trader] == 0 && refID != 0) refRecords[_trader] = refID;
+
         ///@dev Update the points of the affiliate NFT
-        uint256 newAffiliatePoints = affiliatePoints[_refID] + accruedPoints;
-        affiliatePoints[_refID] = newAffiliatePoints;
+        uint256 newAffiliatePoints = affiliatePoints[refID] + accruedPoints;
+        affiliatePoints[refID] = newAffiliatePoints;
 
         // INTERACTIONS
         ///@dev Emit events for updating the loyalty and affiliate points
         emit LoyaltyPointsUpdated(_trader, newPoints);
-        emit AffiliatePointsUpdated(_refID, newAffiliatePoints);
+        emit AffiliatePointsUpdated(refID, newAffiliatePoints);
 
         ///@dev Attempt to distribute the loyalty reward and move to the next epoch
         _distributeLoyaltyReward(loyaltyPointsLeader);
