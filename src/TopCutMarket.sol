@@ -280,24 +280,27 @@ contract TopCutMarket {
     ///@dev A deficit occurs if cohortSize < 11 which is offset by more participants later
     function skimSurplus() external {
         uint256 balance = address(this).balance;
+
+        ///@dev Calculate balance associated with active trades + buffer
         uint256 reservedTradeVolume = (
             cohortSize * TRADE_SIZE * (SHARE_PRECISION - (SHARE_VAULT + SHARE_FRONTEND + SHARE_KEEPER))
         ) / SHARE_PRECISION;
+        uint256 buffer = WIN_SIZE;
 
         ///@dev Check for surplus ETH balance
-        uint256 surplusBalance = ((totalPendingClaims + reservedTradeVolume) < balance)
-            ? balance - (totalPendingClaims + reservedTradeVolume)
+        uint256 surplusBalance = ((totalPendingClaims + reservedTradeVolume + buffer) < balance)
+            ? balance - (totalPendingClaims + reservedTradeVolume + buffer)
             : 0;
 
         if (surplusBalance > 0) {
-            uint256 keeperReward = surplusBalance / 20;
+            uint256 keeperReward = surplusBalance / 20; // 5% of surplus
             uint256 sendAmount = surplusBalance - keeperReward;
 
-            ///@dev Send 95% of surplus ETH to the Vault
+            ///@dev Send net surplus ETH to the Vault
             (bool sent,) = payable(address(TOP_CUT_VAULT)).call{value: sendAmount}("");
             if (!sent) revert FailedToSkimSurplus();
 
-            ///@dev Send keeper incentive (5%) -> larger share than for settlement because low value transactions
+            ///@dev Send keeper incentive (larger share than for settlement because low value transactions)
             (sent,) = payable(msg.sender).call{value: keeperReward}("");
             if (!sent) revert FailedToSkimSurplus();
         }
