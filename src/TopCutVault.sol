@@ -11,7 +11,6 @@ error Deadline();
 error FailedToSendNativeToken();
 error InsufficientReceived();
 error InvalidAffiliateID();
-error InvalidAmount();
 error InvalidMarket();
 error NotAuthorized();
 error Timelock();
