@@ -162,6 +162,9 @@ contract TopCutMarket {
         ///@dev Ensure that the oracle price was updated after the settlement time
         if (updatedAt < nextSettlement) revert StaleOraclePrice();
 
+        ///@dev Sanity check to avoid erroneous data
+        if (price == 0) revert StaleOraclePrice();
+
         ///@dev Typecast oracle price to uint256 and normalize to price prediction input precision
         uint256 settlementPrice = (uint256(price) * (10 ** PREDICTION_DECIMALS)) / (10 ** ORACLE_DECIMALS);
 
