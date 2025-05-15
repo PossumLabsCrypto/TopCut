@@ -10,8 +10,8 @@ import {ITopCutNFT} from "./interfaces/ITopCutNFT.sol";
 error Deadline();
 error FailedToSendNativeToken();
 error InsufficientReceived();
+error InsufficientPoints();
 error InvalidAffiliateID();
-error InvalidMarket();
 error NotAuthorized();
 error Timelock();
 error CeilingReached();
@@ -124,30 +124,35 @@ contract TopCutVault {
     // ============================================
     // ==           AFFILIATE REWARDS            ==
     // ============================================
-    ///@notice Returns the pending affiliate reward in ETH when redeeming all points of the given affiliate NFT ID
+    ///@notice Returns the pending affiliate reward in ETH when redeeming points of the given affiliate NFT ID
     ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
-    function getAffiliateReward(uint256 _refID) public view returns (uint256 ethReward) {
-        uint256 points = affiliatePoints[_refID];
+    function quoteAffiliateReward(uint256 _pointsRedeemed) public view returns (uint256 ethReward) {
         uint256 ethBalance = address(this).balance;
-        uint256 newTotalAffiliatePoints = totalRedeemedAP + points;
+        uint256 newTotalAffiliatePoints = totalRedeemedAP + _pointsRedeemed;
 
         ///@dev Calculate the ETH rewards received by the affiliate after pool protection (slippage as in AMM)
-        ethReward = (ethBalance * points) / newTotalAffiliatePoints;
+        ethReward = (ethBalance * _pointsRedeemed) / newTotalAffiliatePoints;
     }
 
     ///@notice Allow affiliates to claim the ETH rewards for their Affiliate NFT
     ///@dev Redeem Affiliate Points of an NFT and send ETH to the NFT owner
-    function claimAffiliateReward(uint256 _refID, uint256 _minReceived) external {
+    function claimAffiliateReward(uint256 _refID, uint256 _pointsRedeemed, uint256 _minReceived) external {
         // CHECKS
         ///@dev Check that the reward request comes from the NFT owner
         if (msg.sender != AFFILIATE_NFT.ownerOf(_refID)) revert NotAuthorized();
 
-        ///@dev Ensure that the received amount matches the expected minimum
-        uint256 rewardsReceived = getAffiliateReward(_refID);
+        ///@dev Adjust input amount if it exceeds available points
+        uint256 points = (_pointsRedeemed > affiliatePoints[_refID]) ? affiliatePoints[_refID] : _pointsRedeemed;
+
+        ///@dev Check if any points can be redeemed
+        if (points == 0) revert InsufficientPoints();
+
+        ///@dev Ensure that the received amount matches or exceeds the expected minimum
+        uint256 rewardsReceived = quoteAffiliateReward(points);
         if (rewardsReceived < _minReceived) revert InsufficientReceived();
 
         // EFFECTS
-        ///@dev Increase the redeemed point tracker until maximum is reached
+        ///@dev Increase the redeemed point tracker ("pool size") until maximum is reached
         if (totalRedeemedAP < MAX_AP_REDEEMED) {
             totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_refID] < MAX_AP_REDEEMED)
                 ? totalRedeemedAP + affiliatePoints[_refID]
@@ -155,7 +160,7 @@ contract TopCutVault {
         }
 
         ///@dev Update the affiliate points of the NFT
-        affiliatePoints[_refID] = 0;
+        affiliatePoints[_refID] -= points;
 
         // INTERACTONS
         ///@dev Send the ETH reward to the affiliate
