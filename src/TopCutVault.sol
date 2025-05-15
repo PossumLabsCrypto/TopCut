@@ -49,7 +49,7 @@ contract TopCutVault {
     uint256 private constant LOYALTY_DISTRIBUTION_PERCENT = 1;
 
     IERC20 private constant PSM = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
-    uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M PSM for 100% of vault
+    uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M PSM for 50% of vault
     uint256 private constant PSM_CEILING = 1e28; // 10Bn = PSM max total supply as defined on L1
     uint256 private totalPsmRedeemed;
 
@@ -247,15 +247,16 @@ contract TopCutVault {
     // ============================================
     ///@notice Returns the amount of ETH received by redeeming a given number of PSM
     ///@dev PSM is exchanged for ETH from the TopCut Vault
+    ///@dev Maximum 50% of the Vault can be redeemed in one transaction
     function quoteRedeemPSM(uint256 _amountPSM) public view returns (uint256 ethOut) {
         uint256 ethBalance = address(this).balance;
         uint256 amount = _amountPSM;
 
-        ///@dev Ensure that the PSM amount is within the logical maximum for a single transaction (100% of Vault)
+        ///@dev Ensure that the PSM amount is within the maximum of a single transaction
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
-        ///@dev Calculate the ETH received in exchange of PSM
-        ethOut = (ethBalance * amount) / PSM_REDEEM_DENOMINATOR;
+        ///@dev Calculate the ETH received in exchange of PSM (100M for 50% of Vault)
+        ethOut = (ethBalance * amount) / (2 * PSM_REDEEM_DENOMINATOR);
     }
 
     ///@notice Allow PSM holders to redeem their PSM for ETH from the TopCut Vault
