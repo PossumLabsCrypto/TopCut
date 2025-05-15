@@ -77,7 +77,7 @@ contract TopCutVault {
     event OwnerTransferStarted(address newOwner, uint256 acceptanceTime);
     event OwnerTransferCompleted(address newOwner);
 
-    event MarketStatusUpdated(address indexed market, bool registered, uint256 lastUpdateTime);
+    event MarketStatusUpdated(address indexed market, bool indexed registered, uint256 lastUpdateTime);
 
     event AffiliatePointsUpdated(uint256 indexed nftID, uint256 affiliatePoints);
     event AffiliateRewardsClaimed(uint256 indexed nftID, uint256 reward);
@@ -172,45 +172,46 @@ contract TopCutVault {
     ///@dev After updating the points, this function attempts to distribute the loyalty rewards of the current epoch
     function updatePoints(address _trader, uint256 _refID) external payable {
         // CHECKS
-        ///@dev Ensure only a registered market can call this function
-        if (!registeredMarkets[msg.sender]) revert InvalidMarket();
+        ///@dev Ensure only a registered market can update points
+        ///@dev Skip to end if not registered to allow unregistered markets to still operate
+        if (registeredMarkets[msg.sender]) {
+            ///@dev Ensure that the affiliate points can be assigned to an existing NFT
+            if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
 
-        ///@dev Ensure that the affiliate points can be assigned to an existing NFT
-        if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
+            // EFFECTS
+            ///@dev Calculate the trader's added loyalty points based on received ETH
+            uint256 accruedPoints = msg.value * 20;
 
-        // EFFECTS
-        ///@dev Calculate the trader's added loyalty points based on received ETH
-        uint256 accruedPoints = msg.value * 20;
+            ///@dev Update the trader's loyalty points
+            uint256 newPoints = loyaltyPoints[_trader] + accruedPoints;
+            loyaltyPoints[_trader] = newPoints;
 
-        ///@dev Update the trader's loyalty points
-        uint256 newPoints = loyaltyPoints[_trader] + accruedPoints;
-        loyaltyPoints[_trader] = newPoints;
+            ///@dev Check if the trader becomes the new active point leader
+            if (newPoints > leadingPoints) {
+                loyaltyPointsLeader = _trader;
+                leadingPoints = newPoints;
+            }
 
-        ///@dev Check if the trader becomes the new active point leader
-        if (newPoints > leadingPoints) {
-            loyaltyPointsLeader = _trader;
-            leadingPoints = newPoints;
+            ///@dev Permanently connect the trader to the affiliate
+            uint256 refID = refRecords[_trader];
+            refID = (refID == 0) ? _refID : refID;
+
+            ///@dev Update the referrer if it changes from 0 to a different ID
+            ///@dev Only ref ID 0 can be overwritten (default) all other connections are permanent
+            if (refRecords[_trader] == 0 && refID != 0) refRecords[_trader] = refID;
+
+            ///@dev Update the points of the affiliate NFT
+            uint256 newAffiliatePoints = affiliatePoints[refID] + accruedPoints;
+            affiliatePoints[refID] = newAffiliatePoints;
+
+            // INTERACTIONS
+            ///@dev Emit events for updating the loyalty and affiliate points
+            emit LoyaltyPointsUpdated(_trader, newPoints);
+            emit AffiliatePointsUpdated(refID, newAffiliatePoints);
+
+            ///@dev Attempt to distribute the loyalty reward and move to the next epoch
+            _distributeLoyaltyReward(loyaltyPointsLeader);
         }
-
-        ///@dev Permanently connect the trader to the affiliate
-        uint256 refID = refRecords[_trader];
-        refID = (refID == 0) ? _refID : refID;
-
-        ///@dev Update the referrer if it changes from 0 to a different ID
-        ///@dev Only ref ID 0 can be overwritten (default) all other connections are permanent
-        if (refRecords[_trader] == 0 && refID != 0) refRecords[_trader] = refID;
-
-        ///@dev Update the points of the affiliate NFT
-        uint256 newAffiliatePoints = affiliatePoints[refID] + accruedPoints;
-        affiliatePoints[refID] = newAffiliatePoints;
-
-        // INTERACTIONS
-        ///@dev Emit events for updating the loyalty and affiliate points
-        emit LoyaltyPointsUpdated(_trader, newPoints);
-        emit AffiliatePointsUpdated(refID, newAffiliatePoints);
-
-        ///@dev Attempt to distribute the loyalty reward and move to the next epoch
-        _distributeLoyaltyReward(loyaltyPointsLeader);
     }
 
     ///@notice Internal function to distribute the Loyalty Reward to the winner of the epoch
