@@ -279,20 +279,21 @@ contract TopCutMarket {
 
     ///@notice Send surplus ETH balance to the Vault
     ///@dev Make use of ETH in the contract that is not required to cover pending claims
-    ///@dev A small surplus occurs frequently when rounding down winners per Cohort (cohortSize / 11)
-    ///@dev A deficit occurs if cohortSize < 11 which is offset by more participants later
+    ///@dev A small surplus occurs frequently when cohortSize > 11 due to rounding down of winners
+    ///@dev A deficit occurs when cohortSize < 11
     function skimSurplus() external {
         uint256 surplusBalance = getSurplus();
 
         if (surplusBalance > 0) {
-            uint256 keeperReward = surplusBalance / 20; // 5% of surplus
+            ///@dev Calculate the reward for keepers & the remaining amount to be sent
+            uint256 keeperReward = (surplusBalance * SHARE_KEEPER) / SHARE_PRECISION;
             uint256 sendAmount = surplusBalance - keeperReward;
 
             ///@dev Send net surplus ETH to the Vault
             (bool sent,) = payable(address(TOP_CUT_VAULT)).call{value: sendAmount}("");
             if (!sent) revert FailedToSkimSurplus();
 
-            ///@dev Send keeper incentive (larger share than settlement because low value transactions)
+            ///@dev Send keeper incentive
             (sent,) = payable(msg.sender).call{value: keeperReward}("");
             if (!sent) revert FailedToSkimSurplus();
         }
@@ -305,14 +306,15 @@ contract TopCutMarket {
     function getSurplus() public view returns (uint256 surplus) {
         uint256 balance = address(this).balance;
 
-        ///@dev Calculate balance associated with active trades + buffer
+        ///@dev Calculate balance associated with active trades
         uint256 reservedTradeVolume = (
             cohortSize * TRADE_SIZE * (SHARE_PRECISION - (SHARE_VAULT + SHARE_FRONTEND + SHARE_KEEPER))
         ) / SHARE_PRECISION;
 
-        uint256 buffer = WIN_SIZE;
+        ///@dev Establish a buffer to ensure backing of payouts if cohortSize is less than 11 periodically
+        uint256 buffer = 10 * WIN_SIZE;
 
-        ///@dev Check for surplus ETH balance
+        ///@dev Calculate and return surplus ETH balance
         surplus = ((totalPendingClaims + reservedTradeVolume + buffer) < balance)
             ? balance - (totalPendingClaims + reservedTradeVolume + buffer)
             : 0;

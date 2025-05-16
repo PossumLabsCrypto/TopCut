@@ -7,6 +7,7 @@ import {TopCutNFT} from "./TopCutNFT.sol";
 import {ITopCutNFT} from "./interfaces/ITopCutNFT.sol";
 
 // ============================================
+error CeilingBreached();
 error Deadline();
 error FailedToSendNativeToken();
 error InsufficientReceived();
@@ -14,7 +15,6 @@ error InsufficientPoints();
 error InvalidAffiliateID();
 error NotAuthorized();
 error Timelock();
-error CeilingReached();
 // ============================================
 
 /// @title TopCut Vault
@@ -269,12 +269,12 @@ contract TopCutVault {
     function redeemPSM(uint256 _amountPSM, uint256 _minReceived, uint256 _deadline) external {
         uint256 amount = _amountPSM;
         // CHECKS
-        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints & check deadline
-        if (totalPsmRedeemed >= PSM_CEILING) revert CeilingReached();
-        if (_deadline < block.timestamp) revert Deadline();
-
-        ///@dev Ensure that the PSM amount is within the logical maximum for a single transaction (100% of Vault)
+        ///@dev Ensure that the PSM amount is within the maximum for a single transaction
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
+
+        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints & check deadline
+        if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
+        if (_deadline < block.timestamp) revert Deadline();
 
         ///@dev Ensure that the received amount matches the expected minimum
         uint256 received = quoteRedeemPSM(amount);
