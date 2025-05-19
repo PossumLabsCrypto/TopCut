@@ -280,7 +280,6 @@ contract TopCutMarket {
     // ============================================
     // ==             READ FUNCTIONS             ==
     // ============================================
-
     /// @notice Find the index of the largest number in a memory array
     function findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
         ///@dev Presume that the largest number is at index 0, then search rest of the array
