@@ -277,48 +277,9 @@ contract TopCutMarket {
         emit PendingClaims(user, 0);
     }
 
-    ///@notice Send surplus ETH balance to the Vault
-    ///@dev Make use of ETH in the contract that is not required to cover pending claims
-    ///@dev A small surplus occurs frequently when cohortSize > 11 due to rounding down of winners
-    ///@dev A deficit occurs when cohortSize < 11
-    function skimSurplus() external {
-        uint256 surplusBalance = getSurplus();
-
-        if (surplusBalance > 0) {
-            ///@dev Calculate the reward for keepers & the remaining amount to be sent
-            uint256 keeperReward = (surplusBalance * SHARE_KEEPER) / SHARE_PRECISION;
-            uint256 sendAmount = surplusBalance - keeperReward;
-
-            ///@dev Send net surplus ETH to the Vault
-            (bool sent,) = payable(address(TOP_CUT_VAULT)).call{value: sendAmount}("");
-            if (!sent) revert FailedToSkimSurplus();
-
-            ///@dev Send keeper incentive
-            (sent,) = payable(msg.sender).call{value: keeperReward}("");
-            if (!sent) revert FailedToSkimSurplus();
-        }
-    }
-
     // ============================================
     // ==             READ FUNCTIONS             ==
     // ============================================
-    ///@notice Calculate and return the current surplus balance that can be skimmed to the TopCut Vault
-    function getSurplus() public view returns (uint256 surplus) {
-        uint256 balance = address(this).balance;
-
-        ///@dev Calculate balance associated with active trades
-        uint256 reservedTradeVolume = (
-            cohortSize * TRADE_SIZE * (SHARE_PRECISION - (SHARE_VAULT + SHARE_FRONTEND + SHARE_KEEPER))
-        ) / SHARE_PRECISION;
-
-        ///@dev Establish a buffer to ensure backing of payouts if cohortSize is less than 11 periodically
-        uint256 buffer = 10 * WIN_SIZE;
-
-        ///@dev Calculate and return surplus ETH balance
-        surplus = ((totalPendingClaims + reservedTradeVolume + buffer) < balance)
-            ? balance - (totalPendingClaims + reservedTradeVolume + buffer)
-            : 0;
-    }
 
     /// @notice Find the index of the largest number in a memory array
     function findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
