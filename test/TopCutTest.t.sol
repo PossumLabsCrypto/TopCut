@@ -47,6 +47,7 @@ contract TopCutTest is Test {
     TopCutMarket market;
     TopCutNFT refNFT;
     TopCutVault vault;
+    TopCutMarket fakeMarket;
 
     // time
     uint256 oneYear = 60 * 60 * 24 * 365;
@@ -59,6 +60,7 @@ contract TopCutTest is Test {
     uint256 constant TRADE_SIZE = 1e16;
     uint256 constant MAX_COHORT_SIZE = 3300;
     address constant BTC_USD_CHAINLINK_ORACLE = 0x6ce185860a4963106506C203335A2910413708e9;
+    uint256 private constant MAX_AP_REDEEMED = 1e24; // Reached after 1M ETH trade volume
 
     //////////////////////////////////////
     /////// SETUP
@@ -73,32 +75,210 @@ contract TopCutTest is Test {
             BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
         );
 
+        fakeMarket = new TopCutMarket(
+            BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, MAX_AP_REDEEMED, TRADE_DURATION, FIRST_SETTLEMENT
+        );
+
         deployment = block.timestamp;
 
         vm.deal(Alice, 100 ether);
         vm.deal(Bob, 100 ether);
-        vm.deal(treasury, 100 ether);
+        vm.deal(treasury, 1000000000 ether);
     }
 
     //////////////////////////////////////
     /////// HELPER FUNCTIONS
     //////////////////////////////////////
-    // Add liquidity to the LP
-    function helper_one() public {}
+    // Cast a grid of predictions via serial castPrediction()
+    function helper_predictionGrid_one() public {}
+
+    // Cast maximum number of predictions in a cohort
+    function helper_fullCohortPredictions() public {}
+
+    // Use fake market to pump maximum total points in the Vault
+    function helper_loopPointsMaximum() public {}
 
     //////////////////////////////////////
     /////// TESTS - Deployment
     //////////////////////////////////////
+    // Check that all starting parameters are correct and the NFT contract was deployed via Vault contructor
+    function testSuccess_verifyDeployments() public {}
 
     //////////////////////////////////////
     /////// TESTS - Markets
     //////////////////////////////////////
+    // test the successful execution of predictions
+    function testSuccess_castPrediction_default() public {
+        // Verify state updates (predictions, owners)
+        // Verify that points were updated in the Vault
+        // Verify that the connected affiliate is 0
+        // Verify that frontend received 3% fee
+        // Verify that Vault received 5% fee
+    }
+
+    // Revert cases
+    function testRevert_castPrediction_default() public {
+        // Scenario 1: zero address as frontend ref
+        // Scenario 2: predicted price is 0
+        // Scenario 3: wrong trade size / ETH
+        // Scenario 4: too many predictions (cohort is full)
+        // Scenario 5: trade duration is active / too late for predictions
+        // Scnario 6: Set a non-payable frontend address (revert ETH sending)
+    }
+
+    // test the successful settlement
+    function testSuccess_settleCohort() public {
+        // verify oracle price
+        // verify expected number of winners
+        // verify expected sequence of winners
+        // verify the increase in claims of winners
+        // verify the global tracker of claims
+        // verify new cohort ID
+        // verify new settlement time
+        // verify keeper reward
+
+        // confirm that this is working with 0 traders in the cohort
+    }
+
+    // Revert cases
+    function testRevert_settleCohort() public {
+        // Scenario 1: Cohort is still active
+        // Scenario 2: Get a stale oracle price (time)
+        // Scenario 3: Get a false oracle price (0)
+        // Scenario 4: keeper cannot receive ETH
+    }
+
+    // test the claiming function
+    function testSuccess_claim() public {
+        // verify the updated user claims
+        // verify the updated global claim tracker
+        // verify the user's ETH balance increase
+    }
+
+    // Revert cases
+    function testRevert_claim() public {
+        // Scenario 1: user has no claims
+        // Scenario 2: contract has not enough balance to pay out user
+        // Scenario 3: user is a contract that cannot receive ETH
+    }
 
     //////////////////////////////////////
     /////// TESTS - Vault
     //////////////////////////////////////
 
+    ///////////// OWNER FUNCTIONS /////////////
+    // test initiating the transfer of ownership
+    function testSuccess_transferOwnership() public {
+        // verify pending owner change
+        // verify timelockEnd change
+    }
+
+    // Revert cases
+    function testRevert_transferOwnership() public {
+        // Scenario 1: caller is not owner
+    }
+
+    // test the acceptance of ownership by the new owner
+    function testSuccess_acceptOwnership() public {
+        // verify change of owner
+        // verify that owner == pending owner
+    }
+
+    // Revert cases
+    function testRevert_acceptOwnership() public {
+        // Scenario 1: Caller is not pending owner
+        // Scenario 2: Timelock is still active
+    }
+
+    // test updating the status of a market
+    function testSuccess_updateMarketRegistry() public {
+        // Register market
+        // verify market status update in mapping
+        // verify last updated update in mapping
+
+        // skip time
+
+        // Deregister market
+        // verify market status update in mapping
+        // verify last updated update in mapping
+    }
+
+    // Revert cases
+    function testRevert_updateMarketRegistry() public {
+        // Scenario 1: not called by owner
+        // Scenario 2: timelock of this market is still active
+    }
+
+    ///////////// LOYALTY POINTS /////////////
+    // test update points called from unregistered address
+    function testSuccess_updatePoints_unregistered() public {
+        // verify that nothing has changed but call succeeded
+    }
+
+    // test the point changes & affiliate changes when input != 0
+    function testSuccess_castPrediction_override() public {
+        // Verify that the affiliate changed from 0 to #newID
+        // Verify that loyalty reward was not distributed (ETH balance)
+    }
+
+    // test the point changes & static affiliate when entering new ID
+    function testSuccess_castPrediction_noOverride() public {
+        // Verify that the original affiliate remains connected
+        // Verify that loyalty reward was not distributed (ETH balance)
+    }
+
+    // test the distribution of the weekly loyalty reward
+    function testSuccess_castPrediction_triggerLoyaltyReward() public {}
+
+    ///////////// AFFILIATE POINTS /////////////
+    // test claiming affiliate points & quote
+    function testSuccess_claimAffiliateReward() public {
+        // Scenario 1: higher input than points owned -> verify adjustment
+        // verify increase in total points redeemed
+        // verify points reduction of the affiliate
+        // verify ETH balance increase of the affiliate
+
+        // helper: max out redeemed points via fake market
+
+        // Scenario 3: Points redeemed beyond maximum
+        // verify stagnation of total points redeemed
+        // verify points reduction of the affiliate
+        // verify ETH balance increase of the affiliate
+    }
+
+    // Revert cases
+    function testRevert_claimAffiliateReward() public {
+        // Scenario 1: caller doesn't own the NFT
+        // Scenario 2: affiliate doesn't have any points
+        // Scenario 3: Receives less than expected
+        // Scenario 4: NFT held by a contract that doesn't accept ETH
+    }
+
+    ///////////// REDEEMING PSM /////////////
+    // test the correct redemption of PSM for ETH & quote
+    function testSuccess_redeemPSM() public {}
+
+    // Revert cases
+    function testRevert_redeemPSM() public {
+        // Scenario 1: Deadline expired
+        // Scenario 2: Received less than expected
+        // Scenario 3: Redeem more tokens than total supply on L1
+        // Scenario 4: Called from a contract that can't receive ETH
+    }
+
     //////////////////////////////////////
     /////// TESTS - NFT
     //////////////////////////////////////
+    // test minting of NFTs
+    function testSuccess_mint() public {
+        // ID increase
+        // Price increase
+        // ETH increase of Vault
+    }
+
+    function testRevert_mint() public {
+        // Scenario 1: not enough ETH paid
+
+        // Scenario 2: Called by contract without onERC721-received
+    }
 }

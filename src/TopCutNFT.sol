@@ -67,12 +67,11 @@ contract TopCutNFT is ERC721URIStorage {
     }
 
     ///@notice Internal function to mint the starting supply to the treasury
-    function _mintInitial() private returns (uint256 nftID) {
+    function _mintInitial() private {
         _safeMint(TREASURY, totalSupply);
         _setTokenURI(totalSupply, metadataURI);
 
-        ///@dev Update supply and price trackers
-        nftID = totalSupply;
+        ///@dev Update supply
         totalSupply++;
     }
 }

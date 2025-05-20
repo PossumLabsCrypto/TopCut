@@ -8,7 +8,7 @@ import {ITopCutNFT} from "./interfaces/ITopCutNFT.sol";
 
 // ============================================
 error CeilingBreached();
-error Deadline();
+error DeadlineExpired();
 error FailedToSendNativeToken();
 error InsufficientReceived();
 error InsufficientPoints();
@@ -104,7 +104,6 @@ contract TopCutVault {
         if (msg.sender != pendingOwner) revert NotAuthorized();
         if (block.timestamp < timelockEnd) revert Timelock();
         owner = pendingOwner;
-        pendingOwner = address(0);
 
         emit OwnerTransferCompleted(owner);
     }
@@ -272,13 +271,15 @@ contract TopCutVault {
         ///@dev Ensure that the PSM amount is within the maximum for a single transaction
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
-        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints & check deadline
-        if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
-        if (_deadline < block.timestamp) revert Deadline();
+        ///@dev Check deadline
+        if (_deadline < block.timestamp) revert DeadlineExpired();
 
         ///@dev Ensure that the received amount matches the expected minimum
         uint256 received = quoteRedeemPSM(amount);
         if (received < _minReceived) revert InsufficientReceived();
+
+        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
+        if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
 
         // EFFECTS
         ///@dev Increase the redeemed PSM tracker

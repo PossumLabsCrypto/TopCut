@@ -112,18 +112,18 @@ contract TopCutMarket {
         uint256 tradeSize = msg.value;
 
         // CHECKS
-        ///@dev Input validation. refID is validated in the Vault.
+        ///@dev Validate frontend beneficiary and price prediction
         if (_frontend == address(0)) revert ZeroAddress();
         if (_price == 0) revert InvalidPrice();
+
+        ///@dev Enforce uniform trade size of each prediction
+        if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
 
         ///@dev Ensure ceiling of the cohort size is maintained
         if (cohortSize == MAX_COHORT_SIZE) revert CohortFull();
 
         ///@dev Ensure that predictions can only be cast if there is at least TRADE_DURATION seconds until settlement
         if (block.timestamp + TRADE_DURATION > nextSettlement) revert WaitingToSettle();
-
-        ///@dev Enforce uniform trade size of each prediction
-        if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
 
         // EFFECTS
         ///@dev Save the prediction and trader in storage
