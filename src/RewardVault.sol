@@ -13,30 +13,32 @@ error FailedToSendNativeToken();
 error InsufficientReceived();
 error InsufficientPoints();
 error InvalidAffiliateID();
-error NotAuthorized();
-error Timelock();
+error InvalidConstructor();
+error NotOwnerOfNFT();
+error ZeroPointRedeem();
 // ============================================
 
-/// @title TopCut Vault
+/// @title Reward Vault
 /// @author Possum Labs
 /**
  * @notice This contract receives ETH from TopCut Markets to distributes Loyalty Rewards and Affiliate Rewards
- * Traders receive Loyalty Points when trading via a registered TopCutMarket
- * The owner can add and remove TopCutMarkets from the LoyaltyRewardPool
+ * Traders receive Loyalty Points when trading on a TopCutMarket
  * Every week, the trader with the most Loyalty Points receives 1% of the Reward Pool's ETH balance
  * The Loyalty Points of the trader receiving the weekly draw are reset to 0
  * The LoyaltyRewardPool has one associated and immutable Affiliate NFT collection to reward growth efforts
  */
-contract TopCutVault {
-    constructor(bytes32 _salt) {
-        nextDistributionTime = block.timestamp + (4 * TIMELOCK);
+contract RewardVault {
+    constructor(bytes32 _salt, uint256 _firstDistributionTime) {
+        ///@dev Enforce a minimum of 2 weeks from deployment until distributing the first loyalty reward
+        if (_firstDistributionTime < block.timestamp + DISTRIBUTION_INTERVAL) revert InvalidConstructor();
+        nextDistributionTime = _firstDistributionTime;
 
         ///@dev Deploy the affiliate NFT contract
         TopCutNFT nft = new TopCutNFT{salt: _salt}("TopCut Affiliates", "TCA");
         address nft_address = address(nft);
         AFFILIATE_NFT = ITopCutNFT(nft_address);
 
-        totalRedeemedAP = 1e19; // Set starting value eq 10 ETH
+        totalRedeemedAP = 1e18; // Set starting value to 1 point
     }
 
     // ============================================
@@ -44,21 +46,14 @@ contract TopCutVault {
     // ============================================
     using SafeERC20 for IERC20;
 
-    uint256 private constant TIMELOCK = 604800; // 7 days
-    uint256 private constant MAX_AP_REDEEMED = 1e24; // Reached after 1M ETH trade volume
+    uint256 private constant DISTRIBUTION_INTERVAL = 604800; // 7 days between loyalty reward distributions
+    uint256 private constant MAX_AP_REDEEMED = 5e22; // 50k points
     uint256 private constant LOYALTY_DISTRIBUTION_PERCENT = 1;
 
     IERC20 private constant PSM = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
     uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M PSM for 50% of vault
     uint256 private constant PSM_CEILING = 1e28; // 10Bn = PSM max total supply as defined on L1
     uint256 private totalPsmRedeemed;
-
-    address public owner;
-    address public pendingOwner;
-    uint256 public timelockEnd;
-
-    mapping(address topCutMarket => bool isRegistered) public registeredMarkets;
-    mapping(address topCutMarket => uint256 timestamp) public lastChanged;
 
     ITopCutNFT public immutable AFFILIATE_NFT;
     uint256 private totalRedeemedAP;
@@ -69,16 +64,10 @@ contract TopCutVault {
     uint256 public nextDistributionTime;
 
     mapping(address trader => uint256 points) public loyaltyPoints;
-    mapping(address trader => uint256 refID) public refRecords;
 
     // ============================================
     // ==                EVENTS                  ==
     // ============================================
-    event OwnerTransferStarted(address newOwner, uint256 acceptanceTime);
-    event OwnerTransferCompleted(address newOwner);
-
-    event MarketStatusUpdated(address indexed market, bool indexed registered, uint256 lastUpdateTime);
-
     event AffiliatePointsUpdated(uint256 indexed nftID, uint256 affiliatePoints);
     event AffiliateRewardsClaimed(uint256 indexed nftID, uint256 reward);
 
@@ -88,134 +77,41 @@ contract TopCutVault {
     event RedeemedPSM(address indexed user, uint256 amountPSM, uint256 reward);
 
     // ============================================
-    // ==           OWNER FUNCTIONS              ==
-    // ============================================
-    ///@notice Initiate an ownership transfer with a timelock
-    function transferOwnership(address _newOwner) external {
-        if (msg.sender != owner) revert NotAuthorized();
-        pendingOwner = _newOwner;
-        timelockEnd = block.timestamp + TIMELOCK;
-
-        emit OwnerTransferStarted(_newOwner, timelockEnd);
-    }
-
-    ///@notice The new owner must accept ownership after the timelock ended
-    function acceptOwnership() external {
-        if (msg.sender != pendingOwner) revert NotAuthorized();
-        if (block.timestamp < timelockEnd) revert Timelock();
-        owner = pendingOwner;
-
-        emit OwnerTransferCompleted(owner);
-    }
-
-    ///@notice Allow the owner to connect or disconnect markets from the Vault
-    ///@dev Ownership protected to prevent malicious markets to connect
-    ///@dev Enforce a timelock between changing market status to prevent systematic interference by malicious owner
-    function updateMarketRegistry(address _market, bool _registryStatus) external {
-        if (msg.sender != owner) revert NotAuthorized();
-        if (block.timestamp < lastChanged[_market] + TIMELOCK) revert Timelock();
-        registeredMarkets[_market] = _registryStatus;
-        lastChanged[_market] = block.timestamp;
-
-        emit MarketStatusUpdated(_market, _registryStatus, block.timestamp);
-    }
-
-    // ============================================
-    // ==           AFFILIATE REWARDS            ==
-    // ============================================
-    ///@notice Returns the pending affiliate reward in ETH when redeeming points of the given affiliate NFT ID
-    ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
-    function quoteAffiliateReward(uint256 _pointsRedeemed) public view returns (uint256 ethReward) {
-        uint256 ethBalance = address(this).balance;
-        uint256 newTotalAffiliatePoints = totalRedeemedAP + _pointsRedeemed;
-
-        ///@dev Calculate the ETH rewards received by the affiliate after pool protection (slippage as in AMM)
-        ethReward = (ethBalance * _pointsRedeemed) / newTotalAffiliatePoints;
-    }
-
-    ///@notice Allow affiliates to claim the ETH rewards for their Affiliate NFT
-    ///@dev Redeem Affiliate Points of an NFT and send ETH to the NFT owner
-    function claimAffiliateReward(uint256 _refID, uint256 _pointsRedeemed, uint256 _minReceived) external {
-        // CHECKS
-        ///@dev Check that the reward request comes from the NFT owner
-        if (msg.sender != AFFILIATE_NFT.ownerOf(_refID)) revert NotAuthorized();
-
-        ///@dev Adjust input amount if it exceeds available points
-        uint256 points = (_pointsRedeemed > affiliatePoints[_refID]) ? affiliatePoints[_refID] : _pointsRedeemed;
-
-        ///@dev Check if any points can be redeemed
-        if (points == 0) revert InsufficientPoints();
-
-        ///@dev Ensure that the received amount matches or exceeds the expected minimum
-        uint256 rewardsReceived = quoteAffiliateReward(points);
-        if (rewardsReceived < _minReceived) revert InsufficientReceived();
-
-        // EFFECTS
-        ///@dev Increase the redeemed point tracker ("pool size") until maximum is reached
-        if (totalRedeemedAP < MAX_AP_REDEEMED) {
-            totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_refID] < MAX_AP_REDEEMED)
-                ? totalRedeemedAP + affiliatePoints[_refID]
-                : MAX_AP_REDEEMED;
-        }
-
-        ///@dev Update the affiliate points of the NFT
-        affiliatePoints[_refID] -= points;
-
-        // INTERACTONS
-        ///@dev Send the ETH reward to the affiliate
-        (bool sent,) = payable(msg.sender).call{value: rewardsReceived}("");
-        if (!sent) revert FailedToSendNativeToken();
-
-        emit AffiliateRewardsClaimed(_refID, rewardsReceived);
-    }
-
-    // ============================================
     // ==            LOYALTY REWARDS             ==
     // ============================================
-    ///@notice Allow registered markets to update loyalty points of traders and affiliate points of NFTs
+    ///@notice Allow any address that pays ETH to update loyalty points of traders and affiliate points of NFTs
     ///@dev After updating the points, this function attempts to distribute the loyalty rewards of the current epoch
     function updatePoints(address _trader, uint256 _refID) external payable {
         // CHECKS
-        ///@dev Ensure only a registered market can update points
-        ///@dev Skip to end if not registered to allow unregistered markets to still operate
-        if (registeredMarkets[msg.sender]) {
-            ///@dev Ensure that the affiliate points can be assigned to an existing NFT
-            if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
+        ///@dev Ensure that the affiliate points can be assigned to an existing NFT
+        if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
 
-            // EFFECTS
-            ///@dev Calculate the trader's added loyalty points based on received ETH
-            uint256 accruedPoints = msg.value * 20;
+        // EFFECTS
+        ///@dev Calculate the trader's added loyalty points based on received ETH
+        uint256 accruedPoints = msg.value;
 
-            ///@dev Update the trader's loyalty points
-            uint256 newPoints = loyaltyPoints[_trader] + accruedPoints;
-            loyaltyPoints[_trader] = newPoints;
+        ///@dev Update the trader's loyalty points
+        uint256 newPoints = loyaltyPoints[_trader] + accruedPoints;
+        loyaltyPoints[_trader] = newPoints;
 
-            ///@dev Check if the trader becomes the new active point leader
-            if (newPoints > leadingPoints) {
-                loyaltyPointsLeader = _trader;
-                leadingPoints = newPoints;
-            }
-
-            ///@dev Permanently connect the trader to the affiliate
-            uint256 refID = refRecords[_trader];
-            refID = (refID == 0) ? _refID : refID;
-
-            ///@dev Update the referrer if it changes from 0 to a different ID
-            ///@dev Only ref ID 0 can be overwritten (default) all other connections are permanent
-            if (refRecords[_trader] == 0 && refID != 0) refRecords[_trader] = refID;
-
-            ///@dev Update the points of the affiliate NFT
-            uint256 newAffiliatePoints = affiliatePoints[refID] + accruedPoints;
-            affiliatePoints[refID] = newAffiliatePoints;
-
-            // INTERACTIONS
-            ///@dev Emit events for updating the loyalty and affiliate points
-            emit LoyaltyPointsUpdated(_trader, newPoints);
-            emit AffiliatePointsUpdated(refID, newAffiliatePoints);
-
-            ///@dev Attempt to distribute the loyalty reward and move to the next epoch
-            _distributeLoyaltyReward(loyaltyPointsLeader);
+        ///@dev Check if the trader becomes the new active point leader
+        if (newPoints > leadingPoints) {
+            loyaltyPointsLeader = _trader;
+            leadingPoints = newPoints;
         }
+
+        ///@dev Update the points of the affiliate NFT
+        ///@dev Handle persistence of ref IDs via the frontend / access point
+        uint256 newAffiliatePoints = affiliatePoints[_refID] + accruedPoints;
+        affiliatePoints[_refID] = newAffiliatePoints;
+
+        // INTERACTIONS
+        ///@dev Emit events for updating the loyalty and affiliate points
+        emit LoyaltyPointsUpdated(_trader, newPoints);
+        emit AffiliatePointsUpdated(_refID, newAffiliatePoints);
+
+        ///@dev Attempt to distribute the loyalty reward and move to the next epoch
+        _distributeLoyaltyReward(loyaltyPointsLeader);
     }
 
     ///@notice Internal function to distribute the Loyalty Reward to the winner of the epoch
@@ -225,7 +121,7 @@ contract TopCutVault {
         if (block.timestamp >= nextDistributionTime) {
             // EFFECTS
             ///@dev Set distribution time for the next epoch
-            nextDistributionTime + TIMELOCK;
+            nextDistributionTime += DISTRIBUTION_INTERVAL;
 
             ///@dev Calculate the reward to be distributed
             uint256 balanceETH = address(this).balance;
@@ -244,6 +140,61 @@ contract TopCutVault {
 
             emit LoyaltyRewardDistributed(_recipient, loyaltyDistribution);
         }
+    }
+
+    // ============================================
+    // ==           AFFILIATE REWARDS            ==
+    // ============================================
+    ///@notice Returns the pending affiliate reward in ETH when redeeming points of the given affiliate NFT ID
+    ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
+    function quoteAffiliateReward(uint256 _pointsRedeemed) public view returns (uint256 ethReward) {
+        uint256 ethBalance = address(this).balance;
+        uint256 newTotalAffiliatePoints = totalRedeemedAP + _pointsRedeemed;
+
+        ///@dev Calculate the ETH rewards received by the affiliate after pool protection (slippage as in AMM)
+        ethReward = (ethBalance * _pointsRedeemed) / newTotalAffiliatePoints;
+    }
+
+    ///@notice Allow affiliates to claim the ETH rewards for their Affiliate NFT
+    ///@dev Redeem Affiliate Points of an NFT and send ETH to the NFT owner
+    function claimAffiliateReward(uint256 _refID, uint256 _pointsRedeemed, uint256 _minReceived, uint256 _deadline)
+        external
+    {
+        // CHECKS
+        ///@dev Check that the reward request comes from the NFT owner
+        if (msg.sender != AFFILIATE_NFT.ownerOf(_refID)) revert NotOwnerOfNFT();
+
+        ///@dev Check if any points can be redeemed
+        uint256 points = _pointsRedeemed;
+        if (points == 0) revert ZeroPointRedeem();
+
+        ///@dev Check for available points, fat finger protection
+        if (points > affiliatePoints[_refID]) revert InsufficientPoints();
+
+        ///@dev Ensure that the received amount matches or exceeds the expected minimum
+        uint256 rewardsReceived = quoteAffiliateReward(points);
+        if (rewardsReceived < _minReceived) revert InsufficientReceived();
+
+        ///@dev Check deadline
+        if (_deadline < block.timestamp) revert DeadlineExpired();
+
+        // EFFECTS
+        ///@dev Increase the redeemed point tracker ("pool size") until maximum is reached
+        if (totalRedeemedAP < MAX_AP_REDEEMED) {
+            totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_refID] < MAX_AP_REDEEMED)
+                ? totalRedeemedAP + affiliatePoints[_refID]
+                : MAX_AP_REDEEMED;
+        }
+
+        ///@dev Update the affiliate points of the NFT
+        affiliatePoints[_refID] -= points;
+
+        // INTERACTONS
+        ///@dev Send the ETH reward to the affiliate
+        (bool sent,) = payable(msg.sender).call{value: rewardsReceived}("");
+        if (!sent) revert FailedToSendNativeToken();
+
+        emit AffiliateRewardsClaimed(_refID, rewardsReceived);
     }
 
     // ============================================
@@ -271,15 +222,15 @@ contract TopCutVault {
         ///@dev Ensure that the PSM amount is within the maximum for a single transaction
         if (amount > PSM_REDEEM_DENOMINATOR) amount = PSM_REDEEM_DENOMINATOR;
 
-        ///@dev Check deadline
-        if (_deadline < block.timestamp) revert DeadlineExpired();
-
         ///@dev Ensure that the received amount matches the expected minimum
         uint256 received = quoteRedeemPSM(amount);
         if (received < _minReceived) revert InsufficientReceived();
 
         ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
         if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
+
+        ///@dev Check deadline
+        if (_deadline < block.timestamp) revert DeadlineExpired();
 
         // EFFECTS
         ///@dev Increase the redeemed PSM tracker

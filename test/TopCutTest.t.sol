@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";
 import {TopCutNFT} from "src/TopCutNFT.sol";
-import {TopCutVault} from "src/TopCutVault.sol";
+import {RewardVault} from "src/RewardVault.sol";
 
 // ============================================
 error activeCohort();
@@ -46,11 +46,12 @@ contract TopCutTest is Test {
     // TopCut instances
     TopCutMarket market;
     TopCutNFT refNFT;
-    TopCutVault vault;
+    RewardVault vault;
     TopCutMarket fakeMarket;
 
     // time
     uint256 oneYear = 60 * 60 * 24 * 365;
+    uint256 oneWeek = 60 * 60 * 24 * 7;
     uint256 deployment;
 
     // Constants
@@ -69,8 +70,11 @@ contract TopCutTest is Test {
         // Create main net fork
         vm.createSelectFork({urlOrAlias: "alchemy_arbitrum_api", blockNumber: 280000000});
 
+        // Calculate first loyalty reward distribution time
+        uint256 firstDistribution = 3 * oneWeek + block.timestamp;
+
         // Create contract instances
-        vault = new TopCutVault(SALT);
+        vault = new RewardVault(SALT, firstDistribution);
         market = new TopCutMarket(
             BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
         );
@@ -103,6 +107,80 @@ contract TopCutTest is Test {
     //////////////////////////////////////
     // Check that all starting parameters are correct and the NFT contract was deployed via Vault contructor
     function testSuccess_verifyDeployments() public {}
+
+    //////////////////////////////////////
+    /////// TESTS - Vault
+    //////////////////////////////////////
+    ///////////// LOYALTY POINTS /////////////
+    // test update points from any address without distributing the loyalty reward
+    function testSuccess_updatePoints_noDistribution() public {
+        // verify that Loyalty points updated
+        // verify that Affiliate points updated
+        // verify that ETH balance increased
+    }
+
+    // test the distribution of the weekly loyalty reward
+    function testSuccess_updatePoints_triggerLoyaltyReward() public {
+        // Scenario 1: Recipient can accept ETH (balance change)
+        // Scenario 2: Recipient cannot accept ETH (no balance change)
+    }
+
+    // Revert cases
+    function testRevert_updatePoints() public {
+        // Scenario 1: Invalid NFT ID
+    }
+
+    ///////////// AFFILIATE POINTS /////////////
+    // test claiming affiliate points & quote
+    function testSuccess_claimAffiliateReward() public {
+        // Scenario 1: higher input than points owned -> verify adjustment
+        // verify increase in total points redeemed
+        // verify points reduction of the affiliate
+        // verify ETH balance increase of the affiliate
+
+        // helper: max out redeemed points via fake market
+
+        // Scenario 3: Points redeemed beyond maximum
+        // verify stagnation of total points redeemed
+        // verify points reduction of the affiliate
+        // verify ETH balance increase of the affiliate
+    }
+
+    // Revert cases
+    function testRevert_claimAffiliateReward() public {
+        // Scenario 1: caller doesn't own the NFT
+        // Scenario 2: affiliate doesn't have any points
+        // Scenario 3: Receives less than expected
+        // Scenario 4: NFT held by a contract that doesn't accept ETH
+    }
+
+    ///////////// REDEEMING PSM /////////////
+    // test the correct redemption of PSM for ETH & quote
+    function testSuccess_redeemPSM() public {}
+
+    // Revert cases
+    function testRevert_redeemPSM() public {
+        // Scenario 1: Deadline expired
+        // Scenario 2: Received less than expected
+        // Scenario 3: Redeem more tokens than total supply on L1
+        // Scenario 4: Called from a contract that can't receive ETH
+    }
+
+    //////////////////////////////////////
+    /////// TESTS - NFT
+    //////////////////////////////////////
+    // test minting of NFTs
+    function testSuccess_mint() public {
+        // ID increase
+        // Price increase
+        // ETH increase of Vault
+    }
+
+    function testRevert_mint() public {
+        // Scenario 1: not enough ETH paid
+
+        // Scenario 2: Called by contract without onERC721-received
+    }
 
     //////////////////////////////////////
     /////// TESTS - Markets
@@ -160,125 +238,5 @@ contract TopCutTest is Test {
         // Scenario 1: user has no claims
         // Scenario 2: contract has not enough balance to pay out user
         // Scenario 3: user is a contract that cannot receive ETH
-    }
-
-    //////////////////////////////////////
-    /////// TESTS - Vault
-    //////////////////////////////////////
-
-    ///////////// OWNER FUNCTIONS /////////////
-    // test initiating the transfer of ownership
-    function testSuccess_transferOwnership() public {
-        // verify pending owner change
-        // verify timelockEnd change
-    }
-
-    // Revert cases
-    function testRevert_transferOwnership() public {
-        // Scenario 1: caller is not owner
-    }
-
-    // test the acceptance of ownership by the new owner
-    function testSuccess_acceptOwnership() public {
-        // verify change of owner
-        // verify that owner == pending owner
-    }
-
-    // Revert cases
-    function testRevert_acceptOwnership() public {
-        // Scenario 1: Caller is not pending owner
-        // Scenario 2: Timelock is still active
-    }
-
-    // test updating the status of a market
-    function testSuccess_updateMarketRegistry() public {
-        // Register market
-        // verify market status update in mapping
-        // verify last updated update in mapping
-
-        // skip time
-
-        // Deregister market
-        // verify market status update in mapping
-        // verify last updated update in mapping
-    }
-
-    // Revert cases
-    function testRevert_updateMarketRegistry() public {
-        // Scenario 1: not called by owner
-        // Scenario 2: timelock of this market is still active
-    }
-
-    ///////////// LOYALTY POINTS /////////////
-    // test update points called from unregistered address
-    function testSuccess_updatePoints_unregistered() public {
-        // verify that nothing has changed but call succeeded
-    }
-
-    // test the point changes & affiliate changes when input != 0
-    function testSuccess_castPrediction_override() public {
-        // Verify that the affiliate changed from 0 to #newID
-        // Verify that loyalty reward was not distributed (ETH balance)
-    }
-
-    // test the point changes & static affiliate when entering new ID
-    function testSuccess_castPrediction_noOverride() public {
-        // Verify that the original affiliate remains connected
-        // Verify that loyalty reward was not distributed (ETH balance)
-    }
-
-    // test the distribution of the weekly loyalty reward
-    function testSuccess_castPrediction_triggerLoyaltyReward() public {}
-
-    ///////////// AFFILIATE POINTS /////////////
-    // test claiming affiliate points & quote
-    function testSuccess_claimAffiliateReward() public {
-        // Scenario 1: higher input than points owned -> verify adjustment
-        // verify increase in total points redeemed
-        // verify points reduction of the affiliate
-        // verify ETH balance increase of the affiliate
-
-        // helper: max out redeemed points via fake market
-
-        // Scenario 3: Points redeemed beyond maximum
-        // verify stagnation of total points redeemed
-        // verify points reduction of the affiliate
-        // verify ETH balance increase of the affiliate
-    }
-
-    // Revert cases
-    function testRevert_claimAffiliateReward() public {
-        // Scenario 1: caller doesn't own the NFT
-        // Scenario 2: affiliate doesn't have any points
-        // Scenario 3: Receives less than expected
-        // Scenario 4: NFT held by a contract that doesn't accept ETH
-    }
-
-    ///////////// REDEEMING PSM /////////////
-    // test the correct redemption of PSM for ETH & quote
-    function testSuccess_redeemPSM() public {}
-
-    // Revert cases
-    function testRevert_redeemPSM() public {
-        // Scenario 1: Deadline expired
-        // Scenario 2: Received less than expected
-        // Scenario 3: Redeem more tokens than total supply on L1
-        // Scenario 4: Called from a contract that can't receive ETH
-    }
-
-    //////////////////////////////////////
-    /////// TESTS - NFT
-    //////////////////////////////////////
-    // test minting of NFTs
-    function testSuccess_mint() public {
-        // ID increase
-        // Price increase
-        // ETH increase of Vault
-    }
-
-    function testRevert_mint() public {
-        // Scenario 1: not enough ETH paid
-
-        // Scenario 2: Called by contract without onERC721-received
     }
 }
