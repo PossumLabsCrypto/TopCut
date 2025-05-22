@@ -4,9 +4,12 @@ pragma solidity =0.8.19;
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {ITopCutNFT} from "src/interfaces/ITopCutNFT.sol";
+import {ITopCutMarket} from "src/interfaces/ITopCutMarket.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";
 import {TopCutNFT} from "src/TopCutNFT.sol";
 import {RewardVault} from "src/RewardVault.sol";
+import {DOScontract} from "test/mocks/DOScontract.sol";
 
 // ============================================
 error activeCohort();
@@ -28,26 +31,27 @@ error FailedToSendNativeToken();
 error InsufficientPayment();
 
 error CeilingBreached();
-error Deadline();
+error DeadlineExpired();
 error InsufficientReceived();
 error InsufficientPoints();
 error InvalidAffiliateID();
-error NotAuthorized();
-error Timelock();
+error NotOwnerOfNFT();
+error ZeroPointRedeem();
 // ============================================
 
 contract TopCutTest is Test {
     // addresses
     address payable Alice = payable(0x46340b20830761efd32832A74d7169B29FEB9758);
     address payable Bob = payable(0x490b1E689Ca23be864e55B46bf038e007b528208);
-    address payable treasury = payable(0xAb845D09933f52af5642FC87Dd8FBbf553fd7B33);
-    address psm = 0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5;
+    address payable treasury = payable(0xa0BFD02a7a47CBCA7230E03fbf04A196C3E771E3);
+    IERC20 psm = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
 
-    // TopCut instances
+    // Contract instances
     TopCutMarket market;
-    TopCutNFT refNFT;
+    ITopCutNFT refNFT;
     RewardVault vault;
     TopCutMarket fakeMarket;
+    DOScontract dosContract;
 
     // time
     uint256 oneYear = 60 * 60 * 24 * 365;
@@ -55,26 +59,41 @@ contract TopCutTest is Test {
     uint256 deployment;
 
     // Constants
+    uint256 constant PSM_TOTAL_SUPPLY_L1 = 1e28; // 10Bn
+
     bytes32 constant SALT = "1245678";
     uint256 constant FIRST_SETTLEMENT = 1748430000;
     uint256 constant TRADE_DURATION = 86400;
     uint256 constant TRADE_SIZE = 1e16;
+    uint256 constant WIN_SIZE = 1e17;
     uint256 constant MAX_COHORT_SIZE = 3300;
     address constant BTC_USD_CHAINLINK_ORACLE = 0x6ce185860a4963106506C203335A2910413708e9;
-    uint256 private constant MAX_AP_REDEEMED = 1e24; // Reached after 1M ETH trade volume
+    uint256 constant ORACLE_RESPONSE_AT_FORK_HEIGHT = 11060800999999;
+    uint256 private constant MAX_AP_REDEEMED = 5e22; // 50k points
+
+    uint256 public constant SHARE_PRECISION = 1000;
+    uint256 public constant SHARE_VAULT = 50;
+    uint256 public constant SHARE_FRONTEND = 30;
+    uint256 public constant SHARE_KEEPER = 10;
+    uint256 public constant PREDICTION_DECIMALS = 18;
+
+    string public metadataURI = "420g02n230f203f";
+    uint256 constant START_MINT_PRICE = 1e17;
+    uint256 constant MINT_PRICE_INCREASE = 1e16;
 
     //////////////////////////////////////
     /////// SETUP
     //////////////////////////////////////
     function setUp() public {
         // Create main net fork
-        vm.createSelectFork({urlOrAlias: "alchemy_arbitrum_api", blockNumber: 280000000});
+        vm.createSelectFork({urlOrAlias: "alchemy_arbitrum_api", blockNumber: 339289690});
 
         // Calculate first loyalty reward distribution time
         uint256 firstDistribution = 3 * oneWeek + block.timestamp;
 
         // Create contract instances
         vault = new RewardVault(SALT, firstDistribution);
+        refNFT = ITopCutNFT(vault.AFFILIATE_NFT());
         market = new TopCutMarket(
             BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
         );
@@ -82,6 +101,8 @@ contract TopCutTest is Test {
         fakeMarket = new TopCutMarket(
             BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, MAX_AP_REDEEMED, TRADE_DURATION, FIRST_SETTLEMENT
         );
+
+        dosContract = new DOScontract(address(psm), address(vault), address(market), address(refNFT));
 
         deployment = block.timestamp;
 
@@ -106,7 +127,95 @@ contract TopCutTest is Test {
     /////// TESTS - Deployment
     //////////////////////////////////////
     // Check that all starting parameters are correct and the NFT contract was deployed via Vault contructor
-    function testSuccess_verifyDeployments() public {}
+    function testSuccess_verifyDeployments() public view {
+        ITopCutNFT nft = vault.AFFILIATE_NFT();
+
+        // Vault
+        assertTrue(address(nft) != address(0));
+        assertEq(vault.loyaltyPointsLeader(), address(0));
+        assertEq(vault.leadingPoints(), 0);
+        assertEq(vault.nextDistributionTime(), 3 * oneWeek + block.timestamp);
+
+        // NFT
+        assertEq(nft.REWARD_VAULT(), address(vault));
+        assertEq(nft.metadataURI(), metadataURI);
+        assertEq(nft.mintPriceETH(), START_MINT_PRICE);
+        assertEq(nft.ownerOf(22), treasury);
+        assertEq(nft.totalSupply(), 40);
+
+        // Market
+        assertEq(market.SHARE_PRECISION(), SHARE_PRECISION);
+        assertEq(market.SHARE_VAULT(), SHARE_VAULT);
+        assertEq(market.SHARE_FRONTEND(), SHARE_FRONTEND);
+        assertEq(market.SHARE_KEEPER(), SHARE_KEEPER);
+
+        assertEq(address(market.TOP_CUT_VAULT()), address(vault));
+        assertEq(market.TRADE_DURATION(), TRADE_DURATION);
+        assertEq(market.TRADE_SIZE(), TRADE_SIZE);
+        assertEq(market.WIN_SIZE(), WIN_SIZE);
+        assertEq(market.PREDICTION_DECIMALS(), PREDICTION_DECIMALS);
+
+        assertEq(market.nextSettlement(), FIRST_SETTLEMENT);
+
+        assertEq(market.predictions(1), 0);
+        assertEq(market.predictionOwners(1), address(0));
+        assertEq(market.claimAmounts(treasury), 0);
+
+        assertEq(market.totalPendingClaims(), 0);
+
+        uint256 max_winners = MAX_COHORT_SIZE / 11;
+        for (uint256 i = 0; i < max_winners; i++) {
+            assertEq(market.winnersList(i), address(vault));
+        }
+    }
+
+    // Revert of vault deployment
+    function testRevert_vaultConstructor() public {
+        vm.expectRevert(InvalidConstructor.selector);
+        new RewardVault(SALT, 12345);
+    }
+
+    // Revert of market deployment
+    function testRevert_marketConstructor() public {
+        // Invalid oracle
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(address(0), address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
+
+        // Invalid vault
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(
+            BTC_USD_CHAINLINK_ORACLE, address(0), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
+        );
+
+        // Too small cohort
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), 11, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
+
+        // Too large cohort
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), 1e5, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
+
+        // Invalid trade size
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(
+            BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, 1e5, TRADE_DURATION, FIRST_SETTLEMENT
+        );
+
+        // Too short trade duration
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, 1111, FIRST_SETTLEMENT);
+
+        // Invalid first settlement date
+        vm.expectRevert(InvalidConstructor.selector);
+        new TopCutMarket(
+            BTC_USD_CHAINLINK_ORACLE,
+            address(vault),
+            MAX_COHORT_SIZE,
+            TRADE_SIZE,
+            TRADE_DURATION,
+            block.timestamp + TRADE_DURATION
+        );
+    }
 
     //////////////////////////////////////
     /////// TESTS - Vault
@@ -156,14 +265,92 @@ contract TopCutTest is Test {
 
     ///////////// REDEEMING PSM /////////////
     // test the correct redemption of PSM for ETH & quote
-    function testSuccess_redeemPSM() public {}
+    function testSuccess_redeemPSM() public {
+        // Parameters
+        uint256 amountRedeem = 5e25; // 50M
+        uint256 vaultBalanceStart = 1e18;
+        uint256 psmStartBalance = psm.balanceOf(treasury);
+
+        // Send some ETH to increase Vault balance
+        vm.startPrank(treasury);
+        (bool sent,) = address(vault).call{value: vaultBalanceStart}("");
+        sent = true;
+        assertEq(address(vault).balance, vaultBalanceStart);
+
+        // Quote for 50M PSM redemption
+        uint256 ethOut_first = vault.quoteRedeemPSM(amountRedeem);
+        assertEq(ethOut_first, vaultBalanceStart / 4); // 50M redeems 25% of vault
+
+        // Redeem 50M PSM
+        psm.approve(address(vault), 1e55);
+        vault.redeemPSM(amountRedeem, 1, block.timestamp);
+
+        // Quote for 150M PSM redemption --> adjusted to 100M
+        uint256 ethOut_second = vault.quoteRedeemPSM(amountRedeem * 3);
+        assertEq(ethOut_second, (vaultBalanceStart * 3) / 8); // 100M redeem 50% of remaining balance (3/8 of initial)
+
+        // Redeem 150M PSM (100m effective)
+        vault.redeemPSM(amountRedeem * 3, 1, block.timestamp);
+        vm.stopPrank();
+
+        assertEq(psm.balanceOf(treasury), psmStartBalance - (3 * amountRedeem)); // 150M got redeemed in total
+        assertEq(address(vault).balance, vaultBalanceStart - ethOut_first - ethOut_second);
+        assertEq(address(vault).balance, (vaultBalanceStart * 3) / 8); // total of 5/8 of initial ETH balance was extracted
+    }
 
     // Revert cases
     function testRevert_redeemPSM() public {
-        // Scenario 1: Deadline expired
-        // Scenario 2: Received less than expected
-        // Scenario 3: Redeem more tokens than total supply on L1
-        // Scenario 4: Called from a contract that can't receive ETH
+        // Parameters
+        uint256 amountRedeem = 5e25; // 50M
+        uint256 vaultBalanceStart = 1e18;
+
+        // Send some ETH to increase Vault balance
+        vm.startPrank(treasury);
+        (bool sent,) = address(vault).call{value: vaultBalanceStart}("");
+        sent = true;
+        assertEq(address(vault).balance, vaultBalanceStart);
+
+        // Scenario 1: Received less than expected
+        psm.approve(address(vault), 1e55);
+        vm.expectRevert(InsufficientReceived.selector);
+        vault.redeemPSM(amountRedeem, vaultBalanceStart, block.timestamp);
+
+        // Scenario 2: Deadline expired
+        uint256 timePrev = block.timestamp;
+        vm.warp(timePrev + 1000);
+        vm.expectRevert(DeadlineExpired.selector);
+        vault.redeemPSM(amountRedeem, 1, timePrev);
+
+        // Scenario 3: Redeem from contract that cannot receive ETH
+        // Send 50M PSM to DOS contract
+        psm.transfer(address(dosContract), amountRedeem);
+
+        vm.expectRevert(FailedToSendNativeToken.selector);
+        dosContract.tryRedeemPSM();
+
+        vm.stopPrank();
+        assertEq(address(dosContract).balance, 0); // 0 ETH in the dosContract
+        assertEq(psm.balanceOf(address(dosContract)), amountRedeem); // 50M PSM in the dosContract
+
+        // Scenario 4: Redeem more tokens than total supply on L1
+        // loop of redeeming PSM in Vault and sending it back to caller so that storage variable goes up
+        for (uint256 i = 0; i < 200; i++) {
+            vm.prank(treasury);
+            vault.redeemPSM(amountRedeem, 0, block.timestamp);
+
+            uint256 balancePSM = psm.balanceOf(address(vault));
+            vm.prank(address(vault));
+            psm.transfer(treasury, balancePSM);
+        }
+
+        vm.startPrank(treasury);
+        // refill vault with ETH
+        (sent,) = address(vault).call{value: vaultBalanceStart}("");
+
+        vm.expectRevert(CeilingBreached.selector);
+        vault.redeemPSM(amountRedeem, 1, block.timestamp);
+
+        vm.stopPrank();
     }
 
     //////////////////////////////////////
@@ -171,15 +358,24 @@ contract TopCutTest is Test {
     //////////////////////////////////////
     // test minting of NFTs
     function testSuccess_mint() public {
-        // ID increase
-        // Price increase
-        // ETH increase of Vault
+        // Vault balance before mint
+        uint256 vaultBalanceETH = address(vault).balance;
+
+        vm.prank(treasury);
+        uint256 newID = refNFT.mint{value: START_MINT_PRICE}();
+
+        assertEq(newID, 40);
+        assertEq(refNFT.totalSupply(), 41);
+        assertEq(refNFT.mintPriceETH(), START_MINT_PRICE + MINT_PRICE_INCREASE);
+        assertEq(address(vault).balance, vaultBalanceETH + START_MINT_PRICE);
     }
 
     function testRevert_mint() public {
         // Scenario 1: not enough ETH paid
-
-        // Scenario 2: Called by contract without onERC721-received
+        vm.startPrank(treasury);
+        vm.expectRevert(InsufficientPayment.selector);
+        refNFT.mint{value: START_MINT_PRICE - 1}();
+        vm.stopPrank();
     }
 
     //////////////////////////////////////

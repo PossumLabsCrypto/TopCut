@@ -47,15 +47,15 @@ contract TopCutMarket {
         MAX_COHORT_SIZE = _maxCohortSize;
         uint256 max_winners = _maxCohortSize / (11);
 
-        if (_tradeDuration < 86400) revert InvalidConstructor(); // min 24h
-        TRADE_DURATION = _tradeDuration;
-
-        if (_tradeSize == 0) revert InvalidConstructor();
+        if (_tradeSize < 1e16) revert InvalidConstructor(); // min 0.01
         TRADE_SIZE = _tradeSize;
         WIN_SIZE = _tradeSize * 10;
 
+        if (_tradeDuration < 86400) revert InvalidConstructor(); // min 24h
+        TRADE_DURATION = _tradeDuration;
+
         if (_firstSettlementTime < block.timestamp + _tradeDuration * 3) revert InvalidConstructor();
-        FIRST_SETTLEMENT = _firstSettlementTime;
+        nextSettlement = _firstSettlementTime;
 
         // Allocate storage space for up to max winners with non-zero values (use vault as dummy address)
         for (uint256 i = 0; i < max_winners; i++) {
@@ -70,7 +70,6 @@ contract TopCutMarket {
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
     uint256 private immutable MAX_COHORT_SIZE;
-    uint256 private immutable FIRST_SETTLEMENT;
 
     uint256 private cohortSize; // Tracks trades in a cohort
     uint256 private activeCohortID; // ID of the current cohort that accepts predictions
@@ -87,9 +86,11 @@ contract TopCutMarket {
     uint256 public constant PREDICTION_DECIMALS = 18; // Decimals of the price input by traders - oracle price is normalized to match
 
     uint256 public nextSettlement; // Time when the current Cohort can be settled
+
     mapping(uint256 tradeID => uint256 prediction) public predictions; // Predictions to evaluate
     mapping(uint256 tradeID => address user) public predictionOwners; // Who submitted each prediction
-    mapping(address winner => uint256 profit) public claimAmounts; // Amount of ETH payouts a winner can receive
+    mapping(address trader => uint256 profit) public claimAmounts; // Amount of ETH payouts a winner can receive
+
     uint256 public totalPendingClaims; // Sum of all users claim amounts
     address[] public winnersList; // Top-N best accuracy prediction owners
 
@@ -234,7 +235,7 @@ contract TopCutMarket {
         ///@dev Update the settlement time for the next round
         ///@dev Trade duration is added twice to give time for traders to enter predictions
         ///@dev To get 1 settlement every Trade duration (e.g. 24h), deploy two contracts with an offset
-        nextSettlement = FIRST_SETTLEMENT + (activeCohortID * TRADE_DURATION * 2);
+        nextSettlement = nextSettlement + (activeCohortID * TRADE_DURATION * 2);
 
         ///@dev Reset the Cohort Size for the next round
         cohortSize = 0;

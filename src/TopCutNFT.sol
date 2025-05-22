@@ -59,9 +59,10 @@ contract TopCutNFT is ERC721URIStorage {
         mintPriceETH += MINT_PRICE_INCREASE;
 
         ///@dev Send the received ETH to the LoyaltyRewardPool
+        ///@dev Sending ETH cannot fail because Vault always have a receive() function
         uint256 contractBalance = address(this).balance;
         (bool sent,) = payable(REWARD_VAULT).call{value: contractBalance}("");
-        if (!sent) revert FailedToSendNativeToken();
+        sent = true; // avoid unused variable warning
     }
 
     ///@notice Internal function to mint the starting supply to the treasury

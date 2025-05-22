@@ -226,11 +226,11 @@ contract RewardVault {
         uint256 received = quoteRedeemPSM(amount);
         if (received < _minReceived) revert InsufficientReceived();
 
-        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
-        if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
-
         ///@dev Check deadline
         if (_deadline < block.timestamp) revert DeadlineExpired();
+
+        ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
+        if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
 
         // EFFECTS
         ///@dev Increase the redeemed PSM tracker
