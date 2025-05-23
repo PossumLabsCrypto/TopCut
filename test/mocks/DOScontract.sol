@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity =0.8.19;
 
+import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ITopCutNFT} from "src/interfaces/ITopCutNFT.sol";
 import {ITopCutMarket} from "src/interfaces/ITopCutMarket.sol";
 import {IRewardVault} from "src/interfaces/IRewardVault.sol";
 
-contract DOScontract {
+contract DOScontract is ERC721Holder {
     constructor(address _psm, address _vault, address _market, address _nft) {
         psm = IERC20(_psm);
         market = ITopCutMarket(_market);
@@ -30,5 +31,14 @@ contract DOScontract {
         uint256 balance = psm.balanceOf(address(this));
         psm.approve(address(vault), 1e55);
         vault.redeemPSM(balance, 1, block.timestamp);
+    }
+
+    function buyNFT() external payable {
+        uint256 price = nft.mintPriceETH();
+        nft.mint{value: price}();
+    }
+
+    function claimAP(uint256 _refID, uint256 _pointsRedeemed, uint256 _minReceived, uint256 _deadline) external {
+        vault.claimAffiliateReward(_refID, _pointsRedeemed, _minReceived, _deadline);
     }
 }

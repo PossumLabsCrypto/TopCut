@@ -16,6 +16,7 @@ error InvalidAffiliateID();
 error InvalidConstructor();
 error NotOwnerOfNFT();
 error ZeroPointRedeem();
+error ZeroAddress();
 // ============================================
 
 /// @title Reward Vault
@@ -53,7 +54,7 @@ contract RewardVault {
     IERC20 private constant PSM = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
     uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M PSM for 50% of vault
     uint256 private constant PSM_CEILING = 1e28; // 10Bn = PSM max total supply as defined on L1
-    uint256 private totalPsmRedeemed;
+    uint256 private totalRedeemedPSM;
 
     ITopCutNFT public immutable AFFILIATE_NFT;
     uint256 private totalRedeemedAP;
@@ -83,6 +84,9 @@ contract RewardVault {
     ///@dev After updating the points, this function attempts to distribute the loyalty rewards of the current epoch
     function updatePoints(address _trader, uint256 _refID) external payable {
         // CHECKS
+        ///@dev Avoid points for the zero address
+        if (_trader == address(0)) revert ZeroAddress();
+
         ///@dev Ensure that the affiliate points can be assigned to an existing NFT
         if (_refID >= AFFILIATE_NFT.totalSupply()) revert InvalidAffiliateID();
 
@@ -123,7 +127,7 @@ contract RewardVault {
             ///@dev Set distribution time for the next epoch
             nextDistributionTime += DISTRIBUTION_INTERVAL;
 
-            ///@dev Calculate the reward to be distributed
+            ///@dev Calculate the reward to be distributed (1%)
             uint256 balanceETH = address(this).balance;
             uint256 loyaltyDistribution = (balanceETH * LOYALTY_DISTRIBUTION_PERCENT) / 100;
 
@@ -164,7 +168,7 @@ contract RewardVault {
         ///@dev Check that the reward request comes from the NFT owner
         if (msg.sender != AFFILIATE_NFT.ownerOf(_refID)) revert NotOwnerOfNFT();
 
-        ///@dev Check if any points can be redeemed
+        ///@dev Check if any points are redeemed
         uint256 points = _pointsRedeemed;
         if (points == 0) revert ZeroPointRedeem();
 
@@ -230,11 +234,11 @@ contract RewardVault {
         if (_deadline < block.timestamp) revert DeadlineExpired();
 
         ///@dev Ensure that the total redeemed PSM stays within its L1 supply constraints
-        if (totalPsmRedeemed + amount > PSM_CEILING) revert CeilingBreached();
+        if (totalRedeemedPSM + amount > PSM_CEILING) revert CeilingBreached();
 
         // EFFECTS
         ///@dev Increase the redeemed PSM tracker
-        totalPsmRedeemed = totalPsmRedeemed + amount;
+        totalRedeemedPSM = totalRedeemedPSM + amount;
 
         // INTERACTONS
         ///@dev Take PSM from the user

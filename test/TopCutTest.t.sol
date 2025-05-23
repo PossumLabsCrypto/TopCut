@@ -46,6 +46,11 @@ contract TopCutTest is Test {
     address payable treasury = payable(0xa0BFD02a7a47CBCA7230E03fbf04A196C3E771E3);
     IERC20 psm = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
 
+    // ETH amounts
+    uint256 aliceETH = 100e18;
+    uint256 bobETH = 100e18;
+    uint256 treasuryETH = 1000000000e18;
+
     // Contract instances
     TopCutMarket market;
     ITopCutNFT refNFT;
@@ -61,7 +66,6 @@ contract TopCutTest is Test {
     // Constants
     uint256 constant PSM_TOTAL_SUPPLY_L1 = 1e28; // 10Bn
 
-    bytes32 constant SALT = "1245678";
     uint256 constant FIRST_SETTLEMENT = 1748430000;
     uint256 constant TRADE_DURATION = 86400;
     uint256 constant TRADE_SIZE = 1e16;
@@ -69,15 +73,18 @@ contract TopCutTest is Test {
     uint256 constant MAX_COHORT_SIZE = 3300;
     address constant BTC_USD_CHAINLINK_ORACLE = 0x6ce185860a4963106506C203335A2910413708e9;
     uint256 constant ORACLE_RESPONSE_AT_FORK_HEIGHT = 11060800999999;
-    uint256 private constant MAX_AP_REDEEMED = 5e22; // 50k points
+    uint256 constant MAX_AP_REDEEMED = 5e22; // 50k points
 
-    uint256 public constant SHARE_PRECISION = 1000;
-    uint256 public constant SHARE_VAULT = 50;
-    uint256 public constant SHARE_FRONTEND = 30;
-    uint256 public constant SHARE_KEEPER = 10;
-    uint256 public constant PREDICTION_DECIMALS = 18;
+    bytes32 constant SALT = "1245678";
+    uint256 constant DISTRIBUTION_INTERVAL = 604800;
+    uint256 constant SHARE_PRECISION = 1000;
+    uint256 constant SHARE_VAULT = 50;
+    uint256 constant SHARE_FRONTEND = 30;
+    uint256 constant SHARE_KEEPER = 10;
+    uint256 constant PREDICTION_DECIMALS = 18;
+    uint256 constant INITIAL_REDEEMED_POINTS = 1e18;
 
-    string public metadataURI = "420g02n230f203f";
+    string metadataURI = "420g02n230f203f";
     uint256 constant START_MINT_PRICE = 1e17;
     uint256 constant MINT_PRICE_INCREASE = 1e16;
 
@@ -106,9 +113,9 @@ contract TopCutTest is Test {
 
         deployment = block.timestamp;
 
-        vm.deal(Alice, 100 ether);
-        vm.deal(Bob, 100 ether);
-        vm.deal(treasury, 1000000000 ether);
+        vm.deal(Alice, aliceETH);
+        vm.deal(Bob, bobETH);
+        vm.deal(treasury, treasuryETH);
     }
 
     //////////////////////////////////////
@@ -223,44 +230,182 @@ contract TopCutTest is Test {
     ///////////// LOYALTY POINTS /////////////
     // test update points from any address without distributing the loyalty reward
     function testSuccess_updatePoints_noDistribution() public {
-        // verify that Loyalty points updated
-        // verify that Affiliate points updated
-        // verify that ETH balance increased
+        vm.prank(Alice);
+        vault.updatePoints{value: 1e18}(Bob, 3);
+
+        assertEq(vault.loyaltyPoints(Bob), 1e18);
+        assertEq(vault.affiliatePoints(3), 1e18);
+        assertEq(vault.leadingPoints(), 1e18);
+        assertEq(vault.loyaltyPointsLeader(), Bob);
+        assertEq(address(vault).balance, 1e18);
     }
 
     // test the distribution of the weekly loyalty reward
     function testSuccess_updatePoints_triggerLoyaltyReward() public {
-        // Scenario 1: Recipient can accept ETH (balance change)
-        // Scenario 2: Recipient cannot accept ETH (no balance change)
+        uint256 pointsToBob = 1e18;
+        uint256 pointsToAlice = 2e18;
+        uint256 pointsToContract = 5e18;
+
+        // Increase points of Bob, Bob becomes leader
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToBob}(Bob, 3);
+
+        assertEq(vault.leadingPoints(), pointsToBob);
+        assertEq(vault.loyaltyPointsLeader(), Bob);
+
+        // Increase points of Alice even more, Alice becomes leader
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToAlice}(Alice, 3);
+
+        assertEq(vault.leadingPoints(), pointsToAlice);
+        assertEq(vault.loyaltyPointsLeader(), Alice);
+
+        uint256 epochEnd = vault.nextDistributionTime();
+
+        // Jump to a time after the nextDistributionTime
+        vm.warp(vault.nextDistributionTime() + 1);
+
+        // Scenario 1: Winner (Alice) can accept ETH (balance changes)
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToAlice}(Alice, 3);
+
+        uint256 vaultBalancePreDistro = pointsToBob + pointsToAlice + pointsToAlice;
+
+        assertEq(Bob.balance, bobETH);
+        assertEq(Alice.balance, aliceETH - vaultBalancePreDistro + (vaultBalancePreDistro / 100));
+        assertEq(address(vault).balance, (vaultBalancePreDistro * 99) / 100);
+
+        assertEq(vault.loyaltyPointsLeader(), address(0));
+        assertEq(vault.leadingPoints(), 0);
+        assertEq(vault.loyaltyPoints(Alice), 0);
+        assertEq(vault.nextDistributionTime(), epochEnd + DISTRIBUTION_INTERVAL);
+
+        // Scenario 2: Winner (dosContract) cannot accept ETH (no balance change)
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToContract}(address(dosContract), 3);
+
+        assertEq(vault.loyaltyPointsLeader(), address(dosContract));
+
+        // Jump to a time after the nextDistributionTime
+        vm.warp(vault.nextDistributionTime() + 1);
+
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToContract}(address(dosContract), 3);
+
+        assertEq(
+            Alice.balance, aliceETH - vaultBalancePreDistro + (vaultBalancePreDistro / 100) - (2 * pointsToContract)
+        );
+        assertEq(address(dosContract).balance, 0);
+        assertEq(address(vault).balance, (vaultBalancePreDistro * 99) / 100 + (2 * pointsToContract));
     }
 
     // Revert cases
     function testRevert_updatePoints() public {
-        // Scenario 1: Invalid NFT ID
+        // Scenario 1: Zero address
+        vm.startPrank(Alice);
+        vm.expectRevert(ZeroAddress.selector);
+        vault.updatePoints{value: 1e18}(address(0), 3);
+
+        // Scenario 2: Invalid NFT ID
+        vm.expectRevert(InvalidAffiliateID.selector);
+        vault.updatePoints{value: 1e18}(Bob, 156);
+
+        vm.stopPrank();
     }
 
     ///////////// AFFILIATE POINTS /////////////
     // test claiming affiliate points & quote
     function testSuccess_claimAffiliateReward() public {
-        // Scenario 1: higher input than points owned -> verify adjustment
-        // verify increase in total points redeemed
-        // verify points reduction of the affiliate
-        // verify ETH balance increase of the affiliate
+        // prepare NFT & points
+        uint256 mintCost = refNFT.mintPriceETH();
+        uint256 pointLoad = 1e18;
 
-        // helper: max out redeemed points via fake market
+        vm.startPrank(Alice);
+        refNFT.mint{value: mintCost}(); // mint ID 40 to Alice
+        vault.updatePoints{value: pointLoad}(Bob, 40); // attribute points to ID 40
 
-        // Scenario 3: Points redeemed beyond maximum
-        // verify stagnation of total points redeemed
-        // verify points reduction of the affiliate
-        // verify ETH balance increase of the affiliate
+        // Scenario 1: Regular claim
+        uint256 points = vault.affiliatePoints(40);
+        uint256 balanceVault = address(vault).balance;
+        uint256 expectedETH = vault.quoteAffiliateReward(points);
+        uint256 expectedManualCalc = (balanceVault * pointLoad) / (pointLoad + INITIAL_REDEEMED_POINTS); // 50% of 1.1 ETH
+
+        assertEq(expectedETH, expectedManualCalc);
+
+        vault.claimAffiliateReward(40, points, expectedETH, block.timestamp);
+
+        assertEq(address(vault).balance, balanceVault - expectedETH);
+        assertEq(Alice.balance, aliceETH - mintCost - pointLoad + expectedETH);
+        assertEq(vault.affiliatePoints(40), 0);
+
+        vm.stopPrank();
+
+        // Redeem points until upper threshold (50k eth)
+        vm.prank(treasury);
+        vault.updatePoints{value: MAX_AP_REDEEMED}(Bob, 40); // attribute 50k points to ID 40
+
+        assertEq(address(vault).balance, MAX_AP_REDEEMED + balanceVault - expectedETH);
+
+        vm.startPrank(Alice);
+        vault.claimAffiliateReward(40, MAX_AP_REDEEMED, 0, block.timestamp);
+        vault.updatePoints{value: pointLoad}(Bob, 40);
+
+        uint256 balanceAlice = Alice.balance;
+        balanceVault = address(vault).balance;
+
+        // Scenario 2: Points redeemed after maximum is reached (MAX_AP_REDEEMED)
+        points = vault.affiliatePoints(40);
+        expectedETH = vault.quoteAffiliateReward(points);
+        expectedManualCalc = (balanceVault * pointLoad) / (pointLoad + MAX_AP_REDEEMED);
+
+        assertEq(expectedETH, expectedManualCalc);
+
+        vault.claimAffiliateReward(40, points, 1, block.timestamp);
+
+        assertEq(Alice.balance, balanceAlice + expectedETH);
+
+        vm.stopPrank();
     }
 
     // Revert cases
     function testRevert_claimAffiliateReward() public {
         // Scenario 1: caller doesn't own the NFT
+        vm.startPrank(Alice);
+        vm.expectRevert(NotOwnerOfNFT.selector);
+        vault.claimAffiliateReward(3, 100, 1, block.timestamp);
+
         // Scenario 2: affiliate doesn't have any points
-        // Scenario 3: Receives less than expected
-        // Scenario 4: NFT held by a contract that doesn't accept ETH
+        refNFT.mint{value: 1e17}(); // mint ID 40 to Alice
+        vm.expectRevert(ZeroPointRedeem.selector);
+        vault.claimAffiliateReward(40, 0, 1, block.timestamp);
+
+        // Scenario 3: affiliate doesn't have enough points
+        vault.updatePoints{value: 1e18}(Bob, 40); // attribute points to ID 40
+
+        vm.expectRevert(InsufficientPoints.selector);
+        vault.claimAffiliateReward(40, 2e18, 1, block.timestamp);
+
+        // Scenario 4: Receives less than expected
+        vm.expectRevert(InsufficientReceived.selector);
+        vault.claimAffiliateReward(40, 1e18, 1e22, block.timestamp);
+
+        // Scenario 5: Deadline expired
+        vm.expectRevert(DeadlineExpired.selector);
+        vault.claimAffiliateReward(40, 1e18, 1, block.timestamp - 100);
+
+        // Scenario 6: NFT held by a contract that doesn't accept ETH
+        uint256 price = refNFT.mintPriceETH();
+        dosContract.buyNFT{value: price}(); // mint NFT by (to) the dosContract
+
+        assertEq(refNFT.totalSupply(), 42);
+        assertEq(refNFT.ownerOf(41), address(dosContract));
+
+        vault.updatePoints{value: 1e18}(Bob, 41); // attribute points to ID 41
+
+        vm.expectRevert(FailedToSendNativeToken.selector);
+        dosContract.claimAP(41, 1e18, 1, block.timestamp);
+
+        vm.stopPrank();
     }
 
     ///////////// REDEEMING PSM /////////////
