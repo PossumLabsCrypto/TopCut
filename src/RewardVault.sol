@@ -10,10 +10,12 @@ import {ITopCutNFT} from "./interfaces/ITopCutNFT.sol";
 error CeilingBreached();
 error DeadlineExpired();
 error FailedToSendNativeToken();
-error InsufficientReceived();
 error InsufficientPoints();
+error InsufficientReceived();
 error InvalidAffiliateID();
 error InvalidConstructor();
+error InvalidPaidETH();
+error InvalidToken();
 error NotOwnerOfNFT();
 error ZeroPointRedeem();
 error ZeroAddress();
@@ -55,6 +57,8 @@ contract RewardVault {
     uint256 private constant PSM_REDEEM_DENOMINATOR = 1e26; // 100M PSM for 50% of vault
     uint256 private constant PSM_CEILING = 1e28; // 10Bn = PSM max total supply as defined on L1
     uint256 private totalRedeemedPSM;
+
+    uint256 public constant EXTRACTION_FEE_ETH = 1e19; // 10 ETH to extract any token aside from PSM
 
     ITopCutNFT public immutable AFFILIATE_NFT;
     uint256 private totalRedeemedAP;
@@ -252,8 +256,34 @@ contract RewardVault {
     }
 
     // ============================================
-    // ==              ENABLE ETH                ==
+    // ==       ENABLE ETH & RANDOM ERC20        ==
     // ============================================
+    ///@notice Allow anyone to withdraw the balance of an ERC20 token for a fee in ETH
+    ///@dev PSM is excluded
+    ///@dev Indirectly, this enables any token to be accumulated and used for rewards
+    function extractTokenBalance(address _token, uint256 _minReceived, uint256 _deadline) external payable {
+        // CHECKS
+        ///@dev Enforce payment of the extraction fee in ETH
+        if (msg.value != EXTRACTION_FEE_ETH) revert InvalidPaidETH();
+
+        ///@dev Prevent Zero address and the extraction of PSM
+        if (_token == address(0) || _token == address(PSM)) revert InvalidToken();
+
+        ///@dev Enforce the deadline
+        if (block.timestamp > _deadline) revert DeadlineExpired();
+
+        ///@dev Prevent frontrunning
+        uint256 balanceToken = IERC20(_token).balanceOf(address(this));
+        if (balanceToken < _minReceived) revert InsufficientReceived();
+
+        // EFFECTS - none
+
+        // INTERACTIONS
+        ///@dev Transfer the token balance to the caller
+        ///@dev Caller is expected to be MEV professional and perform additional checks in case of exotic token
+        IERC20(_token).transfer(msg.sender, balanceToken);
+    }
+
     receive() external payable {}
 
     fallback() external payable {}

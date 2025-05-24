@@ -32,19 +32,22 @@ error InsufficientPayment();
 
 error CeilingBreached();
 error DeadlineExpired();
-error InsufficientReceived();
 error InsufficientPoints();
+error InsufficientReceived();
 error InvalidAffiliateID();
+error InvalidPaidETH();
+error InvalidToken();
 error NotOwnerOfNFT();
 error ZeroPointRedeem();
 // ============================================
 
 contract TopCutTest is Test {
     // addresses
-    address payable Alice = payable(0x46340b20830761efd32832A74d7169B29FEB9758);
-    address payable Bob = payable(0x490b1E689Ca23be864e55B46bf038e007b528208);
+    address payable Alice = payable(address(0x7));
+    address payable Bob = payable(address(0x8));
     address payable treasury = payable(0xa0BFD02a7a47CBCA7230E03fbf04A196C3E771E3);
     IERC20 psm = IERC20(0x17A8541B82BF67e10B0874284b4Ae66858cb1fd5);
+    IERC20 usdc = IERC20(0xaf88d065e77c8cC2239327C5EDb3A432268e5831);
 
     // ETH amounts
     uint256 aliceETH = 100e18;
@@ -61,7 +64,6 @@ contract TopCutTest is Test {
     // time
     uint256 oneYear = 60 * 60 * 24 * 365;
     uint256 oneWeek = 60 * 60 * 24 * 7;
-    uint256 deployment;
 
     // Constants
     uint256 constant PSM_TOTAL_SUPPLY_L1 = 1e28; // 10Bn
@@ -83,6 +85,7 @@ contract TopCutTest is Test {
     uint256 constant SHARE_KEEPER = 10;
     uint256 constant PREDICTION_DECIMALS = 18;
     uint256 constant INITIAL_REDEEMED_POINTS = 1e18;
+    uint256 constant EXTRACTION_FEE_ETH = 1e19;
 
     string metadataURI = "420g02n230f203f";
     uint256 constant START_MINT_PRICE = 1e17;
@@ -110,8 +113,6 @@ contract TopCutTest is Test {
         );
 
         dosContract = new DOScontract(address(psm), address(vault), address(market), address(refNFT));
-
-        deployment = block.timestamp;
 
         vm.deal(Alice, aliceETH);
         vm.deal(Bob, bobETH);
@@ -409,7 +410,7 @@ contract TopCutTest is Test {
     }
 
     ///////////// REDEEMING PSM /////////////
-    // test the correct redemption of PSM for ETH & quote
+    // test the  redemption of PSM for ETH & quote
     function testSuccess_redeemPSM() public {
         // Parameters
         uint256 amountRedeem = 5e25; // 50M
@@ -498,6 +499,59 @@ contract TopCutTest is Test {
         vm.stopPrank();
     }
 
+    ///////////// BALANCE EXTRACTION FOR ETH /////////////
+    // test the withdrawal of an ERC20 token when paying the ETH fee
+    function testSuccess_extractTokenBalance() public {
+        // Send USDC to the vault
+        uint256 amount = 1e6; // 1 USDC
+        vm.prank(treasury);
+        usdc.transfer(address(vault), amount);
+
+        assertEq(usdc.balanceOf(address(vault)), amount);
+
+        // Alice extracts the usdc balance
+        vm.prank(Alice);
+        vault.extractTokenBalance{value: EXTRACTION_FEE_ETH}(address(usdc), 1, block.timestamp);
+
+        assertEq(usdc.balanceOf(address(vault)), 0);
+        assertEq(usdc.balanceOf(Alice), amount);
+        assertEq(address(vault).balance, EXTRACTION_FEE_ETH);
+    }
+
+    // Revert cases
+    function testRevert_extractTokenBalance() public {
+        // Send USDC to the vault
+        uint256 amount = 1e6; // 1 USDC
+        vm.prank(treasury);
+        usdc.transfer(address(vault), amount);
+
+        // Scenario 1: ETH not paid
+        vm.startPrank(Alice);
+        vm.expectRevert(InvalidPaidETH.selector);
+        vault.extractTokenBalance{value: 11}(address(usdc), 1, block.timestamp);
+
+        // Scenario 2: zero address
+        vm.expectRevert(InvalidToken.selector);
+        vault.extractTokenBalance{value: EXTRACTION_FEE_ETH}(address(0), 1, block.timestamp);
+
+        // Scenario 3: PSM address
+        vm.expectRevert(InvalidToken.selector);
+        vault.extractTokenBalance{value: EXTRACTION_FEE_ETH}(address(psm), 1, block.timestamp);
+
+        // Scenario 4: deadline expired
+        vm.expectRevert(DeadlineExpired.selector);
+        vault.extractTokenBalance{value: EXTRACTION_FEE_ETH}(address(usdc), 1, block.timestamp - 10);
+        vm.stopPrank();
+
+        // Scenario 5: Frontrunned by Bob (less than expected)
+        vm.prank(Bob);
+        vault.extractTokenBalance{value: EXTRACTION_FEE_ETH}(address(usdc), amount, block.timestamp);
+
+        vm.prank(Alice);
+        vm.expectRevert(InsufficientReceived.selector);
+        vault.extractTokenBalance{value: EXTRACTION_FEE_ETH}(address(usdc), amount, block.timestamp);
+    }
+
     //////////////////////////////////////
     /////// TESTS - NFT
     //////////////////////////////////////
@@ -527,7 +581,7 @@ contract TopCutTest is Test {
     /////// TESTS - Markets
     //////////////////////////////////////
     // test the successful execution of predictions
-    function testSuccess_castPrediction_default() public {
+    function testSuccess_castPrediction() public {
         // Verify state updates (predictions, owners)
         // Verify that points were updated in the Vault
         // Verify that the connected affiliate is 0
@@ -536,7 +590,7 @@ contract TopCutTest is Test {
     }
 
     // Revert cases
-    function testRevert_castPrediction_default() public {
+    function testRevert_castPrediction() public {
         // Scenario 1: zero address as frontend ref
         // Scenario 2: predicted price is 0
         // Scenario 3: wrong trade size / ETH

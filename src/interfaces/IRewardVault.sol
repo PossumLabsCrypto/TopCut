@@ -17,4 +17,6 @@ interface IRewardVault {
 
     function getRedeemRewardPSM(uint256 _amountPSM) external view returns (uint256 ethReward);
     function redeemPSM(uint256 _amountPSM, uint256 _minReceived, uint256 _deadline) external;
+
+    function extractTokenBalance(address _token, uint256 _minReceived, uint256 _deadline) external payable;
 }
