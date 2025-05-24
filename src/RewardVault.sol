@@ -260,7 +260,7 @@ contract RewardVault {
     // ============================================
     ///@notice Allow anyone to withdraw the balance of an ERC20 token for a fee in ETH
     ///@dev PSM is excluded
-    ///@dev Indirectly, this enables any token to be accumulated and used for rewards
+    ///@dev This function uses token donations to increase rewards for regular users
     function extractTokenBalance(address _token, uint256 _minReceived, uint256 _deadline) external payable {
         // CHECKS
         ///@dev Enforce payment of the extraction fee in ETH
