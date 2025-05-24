@@ -13,13 +13,13 @@ error InsufficientPayment();
 /// @author Possum Labs
 /**
  * @notice Holders of any TopCut NFT can earn affiliate rewards by referring traders
- * Affiliate rewards accrue in Affiliate Points (AP) in the Reward Vault
- * AP can be burned for ETH from the Reward Vault
+ * Affiliate rewards accrue in Affiliate Points (AP) in the TopCut Vault
+ * AP can be burned for ETH from the TopCut Vault
  * Affiliate NFTs can be minted by paying the increasing minting price in ETH
  */
 contract TopCutNFT is ERC721URIStorage {
     constructor(string memory _name, string memory _symbol) ERC721(_name, _symbol) {
-        REWARD_VAULT = msg.sender;
+        TOPCUT_VAULT = msg.sender;
         mintPriceETH = START_MINT_PRICE;
 
         // Mint initial NFT budget to the treasury
@@ -35,7 +35,7 @@ contract TopCutNFT is ERC721URIStorage {
     uint256 private constant MINT_PRICE_INCREASE = 1e16; // +0.01 ETH per mint
     address private constant TREASURY = 0xa0BFD02a7a47CBCA7230E03fbf04A196C3E771E3;
 
-    address public immutable REWARD_VAULT;
+    address public immutable TOPCUT_VAULT;
     string public metadataURI = "420g02n230f203f"; ////////// -------------------->>> UPDATE IPFS METADATA
 
     uint256 public mintPriceETH;
@@ -58,10 +58,10 @@ contract TopCutNFT is ERC721URIStorage {
         totalSupply++;
         mintPriceETH += MINT_PRICE_INCREASE;
 
-        ///@dev Send the received ETH to the LoyaltyRewardPool
+        ///@dev Send the received ETH to the TopCut Vault
         ///@dev Sending ETH cannot fail because Vault always have a receive() function
         uint256 contractBalance = address(this).balance;
-        (bool sent,) = payable(REWARD_VAULT).call{value: contractBalance}("");
+        (bool sent,) = payable(TOPCUT_VAULT).call{value: contractBalance}("");
         sent = true; // avoid unused variable warning
     }
 

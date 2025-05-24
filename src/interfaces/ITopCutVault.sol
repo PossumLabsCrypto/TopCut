@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity =0.8.19;
 
-interface IRewardVault {
+interface ITopCutVault {
     function AFFILIATE_NFT() external view returns (address);
     function affiliatePoints(uint256 _refID) external view returns (uint256);
     function loyaltyPointsLeader() external view returns (address);

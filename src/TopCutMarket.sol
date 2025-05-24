@@ -2,7 +2,7 @@
 pragma solidity 0.8.19;
 
 import {IChainlink} from "./interfaces/IChainlink.sol";
-import {IRewardVault} from "./interfaces/IRewardVault.sol";
+import {ITopCutVault} from "./interfaces/ITopCutVault.sol";
 
 // ============================================
 error activeCohort();
@@ -41,7 +41,7 @@ contract TopCutMarket {
         ORACLE_DECIMALS = ORACLE.decimals();
 
         if (_topCutVault == address(0)) revert InvalidConstructor();
-        TOP_CUT_VAULT = IRewardVault(_topCutVault);
+        TOP_CUT_VAULT = ITopCutVault(_topCutVault);
 
         if (_maxCohortSize < 330 || _maxCohortSize > 3300) revert InvalidConstructor();
         MAX_COHORT_SIZE = _maxCohortSize;
@@ -79,7 +79,7 @@ contract TopCutMarket {
     uint256 public constant SHARE_FRONTEND = 30; // 3% of trade volume
     uint256 public constant SHARE_KEEPER = 10; // 1% of trade volume
 
-    IRewardVault public immutable TOP_CUT_VAULT;
+    ITopCutVault public immutable TOP_CUT_VAULT;
     uint256 public immutable TRADE_DURATION; // The duration when no new trades are accepted before a cohort is settled
     uint256 public immutable TRADE_SIZE; // The amount of ETH that traders pay for each prediction
     uint256 public immutable WIN_SIZE; // Winning trades get back 10x of the TradeSize

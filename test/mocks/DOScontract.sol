@@ -5,13 +5,13 @@ import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Hol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ITopCutNFT} from "src/interfaces/ITopCutNFT.sol";
 import {ITopCutMarket} from "src/interfaces/ITopCutMarket.sol";
-import {IRewardVault} from "src/interfaces/IRewardVault.sol";
+import {ITopCutVault} from "src/interfaces/ITopCutVault.sol";
 
 contract DOScontract is ERC721Holder {
     constructor(address _psm, address _vault, address _market, address _nft) {
         psm = IERC20(_psm);
         market = ITopCutMarket(_market);
-        vault = IRewardVault(_vault);
+        vault = ITopCutVault(_vault);
         nft = ITopCutNFT(_nft);
     }
 
@@ -20,7 +20,7 @@ contract DOScontract is ERC721Holder {
     // ============================================
     IERC20 psm;
     ITopCutMarket market;
-    IRewardVault vault;
+    ITopCutVault vault;
     ITopCutNFT nft;
 
     // ============================================

@@ -8,7 +8,7 @@ import {ITopCutNFT} from "src/interfaces/ITopCutNFT.sol";
 import {ITopCutMarket} from "src/interfaces/ITopCutMarket.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";
 import {TopCutNFT} from "src/TopCutNFT.sol";
-import {RewardVault} from "src/RewardVault.sol";
+import {TopCutVault} from "src/TopCutVault.sol";
 import {DOScontract} from "test/mocks/DOScontract.sol";
 
 // ============================================
@@ -57,7 +57,7 @@ contract TopCutTest is Test {
     // Contract instances
     TopCutMarket market;
     ITopCutNFT refNFT;
-    RewardVault vault;
+    TopCutVault vault;
     TopCutMarket fakeMarket;
     DOScontract dosContract;
 
@@ -102,7 +102,7 @@ contract TopCutTest is Test {
         uint256 firstDistribution = 3 * oneWeek + block.timestamp;
 
         // Create contract instances
-        vault = new RewardVault(SALT, firstDistribution);
+        vault = new TopCutVault(SALT, firstDistribution);
         refNFT = ITopCutNFT(vault.AFFILIATE_NFT());
         market = new TopCutMarket(
             BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
@@ -128,9 +128,6 @@ contract TopCutTest is Test {
     // Cast maximum number of predictions in a cohort
     function helper_fullCohortPredictions() public {}
 
-    // Use fake market to pump maximum total points in the Vault
-    function helper_loopPointsMaximum() public {}
-
     //////////////////////////////////////
     /////// TESTS - Deployment
     //////////////////////////////////////
@@ -145,7 +142,7 @@ contract TopCutTest is Test {
         assertEq(vault.nextDistributionTime(), 3 * oneWeek + block.timestamp);
 
         // NFT
-        assertEq(nft.REWARD_VAULT(), address(vault));
+        assertEq(nft.TOPCUT_VAULT(), address(vault));
         assertEq(nft.metadataURI(), metadataURI);
         assertEq(nft.mintPriceETH(), START_MINT_PRICE);
         assertEq(nft.ownerOf(22), treasury);
@@ -180,7 +177,7 @@ contract TopCutTest is Test {
     // Revert of vault deployment
     function testRevert_vaultConstructor() public {
         vm.expectRevert(InvalidConstructor.selector);
-        new RewardVault(SALT, 12345);
+        new TopCutVault(SALT, 12345);
     }
 
     // Revert of market deployment

@@ -21,7 +21,7 @@ error ZeroPointRedeem();
 error ZeroAddress();
 // ============================================
 
-/// @title Reward Vault
+/// @title TopCut Vault
 /// @author Possum Labs
 /**
  * @notice This contract receives ETH from TopCut Markets to distributes Loyalty Rewards and Affiliate Rewards
@@ -30,7 +30,7 @@ error ZeroAddress();
  * The Loyalty Points of the trader receiving the weekly draw are reset to 0
  * The LoyaltyRewardPool has one associated and immutable Affiliate NFT collection to reward growth efforts
  */
-contract RewardVault {
+contract TopCutVault {
     constructor(bytes32 _salt, uint256 _firstDistributionTime) {
         ///@dev Enforce a minimum of 2 weeks from deployment until distributing the first loyalty reward
         if (_firstDistributionTime < block.timestamp + DISTRIBUTION_INTERVAL) revert InvalidConstructor();
