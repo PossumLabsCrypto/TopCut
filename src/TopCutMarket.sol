@@ -97,7 +97,7 @@ contract TopCutMarket {
     // ============================================
     // ==                EVENTS                  ==
     // ============================================
-    event PredictionPosted(address indexed user, uint256 indexed price);
+    event PredictionPosted(address indexed user, uint256 indexed settlementTime, uint256 price);
     event CohortSettled(uint256 indexed cohortID, uint256 cohortSize, uint256 winners, uint256 keeperShare);
     event PendingClaims(address indexed user, uint256 pendingClaimAmount);
 
@@ -146,7 +146,7 @@ contract TopCutMarket {
         if (!sent) revert FailedToSendFrontendReward();
 
         ///@dev Emit event that informs about this prediction
-        emit PredictionPosted(user, _price);
+        emit PredictionPosted(user, nextSettlement, _price);
     }
 
     ///@notice Find the winning predictions of the active Cohort and save in storage
