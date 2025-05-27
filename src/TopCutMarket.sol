@@ -71,8 +71,8 @@ contract TopCutMarket {
 
     uint256 private immutable MAX_COHORT_SIZE;
 
-    uint256 private cohortSize; // Tracks trades in a cohort
     uint256 private activeCohortID; // ID of the current cohort that accepts predictions
+    uint256 public cohortSize; // Tracks trades in the active cohort
 
     uint256 public constant SHARE_PRECISION = 1000;
     uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
@@ -142,7 +142,7 @@ contract TopCutMarket {
 
         ///@dev Send frontend reward
         uint256 frontendReward = (tradeSize * SHARE_FRONTEND) / SHARE_PRECISION;
-        (bool sent,) = payable(msg.sender).call{value: frontendReward}("");
+        (bool sent,) = payable(_frontend).call{value: frontendReward}("");
         if (!sent) revert FailedToSendFrontendReward();
 
         ///@dev Emit event that informs about this prediction

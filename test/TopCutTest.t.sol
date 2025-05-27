@@ -74,7 +74,7 @@ contract TopCutTest is Test {
     uint256 constant WIN_SIZE = 1e17;
     uint256 constant MAX_COHORT_SIZE = 3300;
     address constant BTC_USD_CHAINLINK_ORACLE = 0x6ce185860a4963106506C203335A2910413708e9;
-    uint256 constant ORACLE_RESPONSE_AT_FORK_HEIGHT = 11060800999999;
+    uint256 constant ORACLE_RESPONSE_AT_FORK_HEIGHT = 11060800999999; // 110608.001 BTC/USD
     uint256 constant MAX_AP_REDEEMED = 5e22; // 50k points
 
     bytes32 constant SALT = "1245678";
@@ -579,21 +579,82 @@ contract TopCutTest is Test {
     //////////////////////////////////////
     // test the successful execution of predictions
     function testSuccess_castPrediction() public {
-        // Verify state updates (predictions, owners)
+        uint256 pricePrediction = 107123e18;
+        uint256 refID = 22;
+
+        uint256 vaultBalance = address(vault).balance;
+        uint256 frontendBalance = treasury.balance;
+
+        uint256 frontendReward = (TRADE_SIZE * SHARE_FRONTEND) / SHARE_PRECISION;
+        uint256 vaultReward = (TRADE_SIZE * SHARE_VAULT) / SHARE_PRECISION;
+
+        vm.prank(Alice);
+        market.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
+
+        // Verify ETH flows to frontend, vault, market
+        assertEq(treasury.balance, frontendBalance + frontendReward);
+        assertEq(address(vault).balance, vaultBalance + vaultReward);
+        assertEq(address(market).balance, TRADE_SIZE - frontendReward - vaultReward);
+
+        // Verify state updates (cohortSize, predictions, owners)
+        assertEq(market.predictions(0), pricePrediction);
+        assertEq(market.predictionOwners(0), Alice);
+        assertEq(market.cohortSize(), 1);
+
         // Verify that points were updated in the Vault
-        // Verify that the connected affiliate is 0
-        // Verify that frontend received 3% fee
-        // Verify that Vault received 5% fee
+        assertEq(vault.loyaltyPoints(Alice), vaultReward);
+        assertEq(vault.affiliatePoints(refID), vaultReward);
+        assertEq(vault.loyaltyPointsLeader(), Alice);
+        assertEq(vault.leadingPoints(), vaultReward);
     }
 
     // Revert cases
     function testRevert_castPrediction() public {
+        uint256 pricePrediction = 107123e18;
+        uint256 refID = 22;
+
         // Scenario 1: zero address as frontend ref
-        // Scenario 2: predicted price is 0
-        // Scenario 3: wrong trade size / ETH
-        // Scenario 4: too many predictions (cohort is full)
-        // Scenario 5: trade duration is active / too late for predictions
-        // Scnario 6: Set a non-payable frontend address (revert ETH sending)
+        vm.prank(Alice);
+        vm.expectRevert(ZeroAddress.selector);
+        market.castPrediction{value: TRADE_SIZE}(address(0), refID, pricePrediction);
+
+        // Scnario 2: Set a non-payable frontend address (revert ETH sending)
+        vm.prank(Alice);
+        vm.expectRevert(FailedToSendFrontendReward.selector);
+        market.castPrediction{value: TRADE_SIZE}(address(dosContract), refID, pricePrediction);
+
+        // Scenario 3: predicted price is 0
+        vm.prank(Alice);
+        vm.expectRevert(InvalidPrice.selector);
+        market.castPrediction{value: TRADE_SIZE}(treasury, refID, 0);
+
+        // Scenario 4: wrong trade size / ETH
+        vm.prank(Alice);
+        vm.expectRevert(InvalidTradeSize.selector);
+        market.castPrediction{value: 123}(treasury, refID, pricePrediction);
+
+        // Scenario 5: too many predictions (cohort is full)
+        vm.startPrank(treasury);
+        for (uint256 i = 0; i < MAX_COHORT_SIZE; i++) {
+            market.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
+        }
+        vm.stopPrank();
+
+        vm.prank(Alice);
+        vm.expectRevert(CohortFull.selector);
+        market.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
+    }
+
+    function testRevert_castPrediction_II() public {
+        uint256 pricePrediction = 107123e18;
+        uint256 refID = 22;
+
+        vm.warp(market.nextSettlement());
+
+        // Scenario 6: trade duration is active / too late for predictions
+        vm.prank(Alice);
+        vm.expectRevert(WaitingToSettle.selector);
+        market.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
     }
 
     // test the successful settlement
