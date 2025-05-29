@@ -13,13 +13,18 @@ interface ITopCutMarket {
     function WIN_SIZE() external view returns (uint256);
     function PREDICTION_DECIMALS() external view returns (uint256);
 
-    function cohortSize() external view returns (uint256);
+    function cohortSize_1() external view returns (uint256);
+    function cohortSize_2() external view returns (uint256);
     function nextSettlement() external view returns (uint256);
 
-    function predictions(uint256 tradeID) external view returns (uint256);
-    function predictionOwners(uint256 tradeID) external view returns (address);
-    function claimAmounts(address trader) external view returns (uint256);
+    struct tradeData {
+        address predictionOwner;
+        uint256 prediction;
+    }
 
+    function tradesCohort_1(uint256 tradeID) external view returns (tradeData memory);
+    function tradesCohort_2(uint256 tradeID) external view returns (tradeData memory);
+
+    function claimAmounts(address trader) external view returns (uint256);
     function totalPendingClaims() external view returns (uint256);
-    function winnersList() external view returns (uint256[] memory);
 }

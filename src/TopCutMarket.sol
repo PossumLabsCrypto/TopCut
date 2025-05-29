@@ -5,7 +5,7 @@ import {IChainlink} from "./interfaces/IChainlink.sol";
 import {ITopCutVault} from "./interfaces/ITopCutVault.sol";
 
 // ============================================
-error activeCohort();
+error cohortActive();
 error CohortFull();
 error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
@@ -16,6 +16,7 @@ error InvalidConstructor();
 error InvalidPrice();
 error InvalidTradeSize();
 error NoClaims();
+error BrokenOraclePrice();
 error StaleOraclePrice();
 error WaitingToSettle();
 error ZeroAddress();
@@ -45,7 +46,6 @@ contract TopCutMarket {
 
         if (_maxCohortSize < 330 || _maxCohortSize > 3300) revert InvalidConstructor();
         MAX_COHORT_SIZE = _maxCohortSize;
-        uint256 max_winners = _maxCohortSize / (11);
 
         if (_tradeSize < 1e16) revert InvalidConstructor(); // min 0.01
         TRADE_SIZE = _tradeSize;
@@ -56,11 +56,6 @@ contract TopCutMarket {
 
         if (_firstSettlementTime < block.timestamp + _tradeDuration * 3) revert InvalidConstructor();
         nextSettlement = _firstSettlementTime;
-
-        // Allocate storage space for up to max winners with non-zero values (use vault as dummy address)
-        for (uint256 i = 0; i < max_winners; i++) {
-            winnersList.push(_topCutVault);
-        }
     }
 
     // ============================================
@@ -70,9 +65,6 @@ contract TopCutMarket {
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
     uint256 private immutable MAX_COHORT_SIZE;
-
-    uint256 private activeCohortID; // ID of the current cohort that accepts predictions
-    uint256 public cohortSize; // Tracks trades in the active cohort
 
     uint256 public constant SHARE_PRECISION = 1000;
     uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
@@ -85,24 +77,33 @@ contract TopCutMarket {
     uint256 public immutable WIN_SIZE; // Winning trades get back 10x of the TradeSize
     uint256 public constant PREDICTION_DECIMALS = 18; // Decimals of the price input by traders - oracle price is normalized to match
 
-    uint256 public nextSettlement; // Time when the current Cohort can be settled
+    uint256 private activeCohortID;
+    uint256 public cohortSize_1; // Tracks trades in the cohort 1
+    uint256 public cohortSize_2; // Tracks trades in the cohort 2
 
-    mapping(uint256 tradeID => uint256 prediction) public predictions; // Predictions to evaluate
-    mapping(uint256 tradeID => address user) public predictionOwners; // Who submitted each prediction
-    mapping(address trader => uint256 profit) public claimAmounts; // Amount of ETH payouts a winner can receive
+    uint256 public nextSettlement; // Time when the active Cohort can be settled
 
-    uint256 public totalPendingClaims; // Sum of all users claim amounts
-    address[] public winnersList; // Top-N best accuracy prediction owners
+    struct tradeData {
+        address predictionOwner;
+        uint256 prediction;
+    }
+
+    mapping(uint256 tradeID => tradeData) public tradesCohort_1;
+    mapping(uint256 tradeID => tradeData) public tradesCohort_2;
+
+    mapping(address trader => uint256 claim) public claimAmounts; // Amount of ETH payouts a winner can claim
+
+    uint256 public totalPendingClaims; // Sum of all claim amounts
 
     // ============================================
     // ==                EVENTS                  ==
     // ============================================
     event PredictionPosted(address indexed user, uint256 indexed settlementTime, uint256 price);
-    event CohortSettled(uint256 indexed cohortID, uint256 cohortSize, uint256 winners, uint256 keeperShare);
-    event PendingClaims(address indexed user, uint256 pendingClaimAmount);
+    event CohortSettled(uint256 cohortSize, uint256 winners, uint256 settlementTime);
+    event PrizesClaimed(address indexed user, uint256 claimedAmount);
 
     // ============================================
-    // ==            WRITE FUNCTIONS             ==
+    // ==           EXTERNAL FUNCTIONS           ==
     // ============================================
     ///@notice Traders enter their price predictions and pay ETH according to TradeSize
     ///@dev Frontends add their wallet address to receive a volume share as compensation for providing access
@@ -120,23 +121,34 @@ contract TopCutMarket {
         ///@dev Enforce uniform trade size of each prediction
         if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
 
-        ///@dev Ensure ceiling of the cohort size is maintained
-        if (cohortSize == MAX_COHORT_SIZE) revert CohortFull();
+        ///@dev Only allow predictions if the settlement of the active cohort is not overdue
+        uint256 settlementTime = nextSettlement;
+        if (block.timestamp > settlementTime) revert WaitingToSettle();
 
-        ///@dev Ensure that predictions can only be cast if there is at least TRADE_DURATION seconds until settlement
-        if (block.timestamp + TRADE_DURATION > nextSettlement) revert WaitingToSettle();
+        ///@dev Get the number of predictions from the next cohort because the active cohort is blocked and waiting for settlement
+        uint256 tradeCounter = (activeCohortID == 1) ? cohortSize_2 : cohortSize_1;
+
+        ///@dev Enforce the ceiling of cohort size
+        if (tradeCounter == MAX_COHORT_SIZE) revert CohortFull();
 
         // EFFECTS
-        ///@dev Save the prediction and trader in storage
-        predictions[cohortSize] = _price;
-        predictionOwners[cohortSize] = user;
+        ///@dev Save the prediction and trader address in storage
+        ///@dev Increase the trade counter of the respective cohort
+        tradeData memory data;
+        data.predictionOwner = user;
+        data.prediction = _price;
 
-        ///@dev Increase the counter of this cohort
-        cohortSize += 1;
+        if (activeCohortID == 1) {
+            tradesCohort_2[tradeCounter] = data;
+            cohortSize_2 = tradeCounter + 1;
+        } else {
+            tradesCohort_1[tradeCounter] = data;
+            cohortSize_1 = tradeCounter + 1;
+        }
 
         // INTERACTIONS
-        ///@dev Update the user's Loyalty Points and referrers Affiliate Points in the TopCut Vault
-        ///@dev Send the Vault share with the function call
+        ///@dev Update Loyalty Points and Affiliate Points in the TopCut Vault
+        ///@dev Send the Vault rev share with the function call
         uint256 vaultReward = (tradeSize * SHARE_VAULT) / SHARE_PRECISION;
         TOP_CUT_VAULT.updatePoints{value: vaultReward}(user, _refID);
 
@@ -146,7 +158,7 @@ contract TopCutMarket {
         if (!sent) revert FailedToSendFrontendReward();
 
         ///@dev Emit event that informs about this prediction
-        emit PredictionPosted(user, nextSettlement, _price);
+        emit PredictionPosted(user, settlementTime, _price);
     }
 
     ///@notice Find the winning predictions of the active Cohort and save in storage
@@ -155,40 +167,52 @@ contract TopCutMarket {
     function settleCohort() external {
         // CHECKS
         ///@dev Ensure that the settlement time is reached
-        if (block.timestamp < nextSettlement) revert activeCohort();
+        uint256 settlementTime = nextSettlement;
+        if (block.timestamp < settlementTime) revert cohortActive();
 
         ///@dev Get the settlement price and timestamp from the oracle
         (, int256 price,, uint256 updatedAt,) = ORACLE.latestRoundData();
 
-        ///@dev Ensure that the oracle price was updated after the settlement time
-        if (updatedAt < nextSettlement) revert StaleOraclePrice();
+        ///@dev Ensure that the oracle price was updated after or at the settlement time
+        if (updatedAt < settlementTime) revert StaleOraclePrice();
 
-        ///@dev Sanity check to avoid erroneous data
-        if (price == 0) revert StaleOraclePrice();
+        ///@dev Sanity check to filter out a bad oracle feed (0 or negative)
+        if (price < 1) revert BrokenOraclePrice();
 
-        ///@dev Typecast oracle price to uint256 and normalize to price prediction input precision
+        ///@dev Typecast oracle price to uint256 and normalize to prediction input precision
         uint256 settlementPrice = (uint256(price) * (10 ** PREDICTION_DECIMALS)) / (10 ** ORACLE_DECIMALS);
+
+        ///@dev Get the cohort size of the active cohort
+        uint256 activeID = activeCohortID;
+        uint256 _cohortSize = (activeID == 1) ? cohortSize_1 : cohortSize_2; // Cache for gas savings
 
         ///@dev Evaluate only if there was at least 1 trade, otherwise skip to end
         uint256 cohortWinners;
-        uint256 _cohortSize = cohortSize; // Cache for gas savings
         if (_cohortSize > 0) {
             // EFFECTS
+            ///@dev Calculate number of winners and update the global tracker of pending claims
             cohortWinners = (_cohortSize > 11) ? _cohortSize / 11 : 1; // Minimum 1 winner
+            totalPendingClaims = totalPendingClaims + (cohortWinners * WIN_SIZE);
 
-            ///@dev Find the winners by looping through all predictions & save the most precise 9%
+            ///@dev Find the winners by looping through all predictions & save the most precise 1 out of 11
             uint256[] memory winnerDiffs = new uint256[](cohortWinners); // absolute differences to oracle price of winning predictions
             address[] memory owners = new address[](cohortWinners); // owner addresses of the winning predictions
 
             uint256 currentMaxIndex = 0;
-            uint256 currentMaxValue = 0;
+            uint256 currentMaxValue = 0; // maximum deviation among winning predictions
 
-            ///@dev Loop over all predictions of this cohort in the mapping & calculate differences to settlement price
+            tradeData memory data;
+            uint256 prediction;
+            uint256 diff;
+            address owner;
+
+            ///@dev Loop through all predictions of the active cohort & calculate differences to settlement price
             for (uint256 i = 0; i < _cohortSize; i++) {
-                uint256 prediction = predictions[i]; // Cache from storage
-                uint256 diff =
-                    (prediction > settlementPrice) ? prediction - settlementPrice : settlementPrice - prediction; // Absolute difference to settlement price
-                address owner = predictionOwners[i];
+                data = (activeID == 1) ? tradesCohort_1[i] : tradesCohort_2[i];
+
+                prediction = data.prediction;
+                diff = (prediction > settlementPrice) ? prediction - settlementPrice : settlementPrice - prediction; // Absolute difference to settlement price
+                owner = data.predictionOwner;
 
                 ///@dev Populate the winner list and track largest difference
                 if (i < cohortWinners) {
@@ -200,57 +224,48 @@ contract TopCutMarket {
                         currentMaxIndex = i;
                     }
 
-                    ///@dev After winner list is populated, only replace winners if prediction is more precise than current worst winner
+                    ///@dev After winner list is populated, only replace winners if evaluated prediction is more precise than current largest difference
                 } else if (diff < currentMaxValue) {
                     winnerDiffs[currentMaxIndex] = diff;
                     owners[currentMaxIndex] = owner;
 
-                    ///@dev Get the new maximum value in the array (worst prediction among the winners)
+                    ///@dev Find the new maximum value in the array (worst prediction among the winners)
                     currentMaxIndex = findMaxIndex(winnerDiffs);
                     currentMaxValue = winnerDiffs[currentMaxIndex];
                 }
             }
 
-            ///@dev Store winners in storage: winnersList[0 to cohortWinners-1]
+            ///@dev Update the pending claim amount for each winning address
             for (uint256 i = 0; i < cohortWinners; i++) {
-                winnersList[i] = owners[i];
-
-                ///@dev Update the pending claim amount for each winning address
-                uint256 _claimAmount = claimAmounts[owners[i]] + WIN_SIZE;
-                claimAmounts[owners[i]] = _claimAmount;
-
-                ///@dev Emit event to notify keepers of the new pending claims
-                emit PendingClaims(owners[i], _claimAmount);
+                claimAmounts[owners[i]] = claimAmounts[owners[i]] + WIN_SIZE;
             }
-
-            ///@dev Update the global tracker of pending claims
-            uint256 addedClaims = cohortWinners * WIN_SIZE;
-            totalPendingClaims += addedClaims;
         }
 
-        ///@dev Advance the Cohort so that new predictions are possible
-        uint256 cohort = activeCohortID;
-        activeCohortID = cohort + 1;
-
         ///@dev Update the settlement time for the next round
-        ///@dev Trade duration is added twice to give time for traders to enter predictions
-        ///@dev To get 1 settlement every Trade duration (e.g. 24h), deploy two contracts with an offset
-        nextSettlement = nextSettlement + (activeCohortID * TRADE_DURATION * 2);
+        nextSettlement = settlementTime + TRADE_DURATION;
 
-        ///@dev Reset the Cohort Size for the next round
-        cohortSize = 0;
+        ///@dev Transition the active cohort 1 -> 2 or 2 -> 1 and reset the settled cohort size
+        if (activeID == 1) {
+            activeCohortID = 2;
+            cohortSize_1 = 0;
+        } else {
+            activeCohortID = 1;
+            cohortSize_2 = 0;
+        }
 
         // INTERACTIONS
-        ///@dev Compensate the keeper based on the volume of the Cohort
+        ///@dev Compensate the keeper based on the number of traders in the Cohort
         uint256 keeperReward = (_cohortSize * TRADE_SIZE * SHARE_KEEPER) / SHARE_PRECISION;
-        (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
-        if (!sent) revert FailedToSendKeeperReward();
+        if (keeperReward > 0) {
+            (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
+            if (!sent) revert FailedToSendKeeperReward();
+        }
 
         ///@dev Emit event that the cohort was settled
-        emit CohortSettled(cohort, _cohortSize, cohortWinners, keeperReward);
+        emit CohortSettled(_cohortSize, cohortWinners, settlementTime);
     }
 
-    ///@notice Enable users to claim their profits
+    ///@notice Enable users to claim their pending prizes
     function claim() external {
         // CHECKS
         ///@dev Ensure that the user has pending claims
@@ -263,7 +278,7 @@ contract TopCutMarket {
         if (amount > balance) revert InsufficientBalance();
 
         // EFFECTS
-        ///@dev Update the pending claims
+        ///@dev Update the pending amount
         claimAmounts[user] = 0;
 
         ///@dev Update the global tracker of pending claims
@@ -275,11 +290,11 @@ contract TopCutMarket {
         if (!sent) revert FailedToSendWinnerReward();
 
         ///@dev Update the pending distributions
-        emit PendingClaims(user, 0);
+        emit PrizesClaimed(user, amount);
     }
 
     // ============================================
-    // ==             READ FUNCTIONS             ==
+    // ==          INTERNAL FUNCTIONS            ==
     // ============================================
     /// @notice Find the index of the largest number in a memory array
     function findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
