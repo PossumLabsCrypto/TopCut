@@ -2,6 +2,7 @@
 pragma solidity =0.8.19;
 
 interface ITopCutMarket {
+    // storage
     function SHARE_PRECISION() external view returns (uint256);
     function SHARE_VAULT() external view returns (uint256);
     function SHARE_FRONTEND() external view returns (uint256);
@@ -27,4 +28,9 @@ interface ITopCutMarket {
 
     function claimAmounts(address trader) external view returns (uint256);
     function totalPendingClaims() external view returns (uint256);
+
+    // functions
+    function castPrediction(address _frontend, uint256 _refID, uint256 _price) external payable;
+    function settleCohort() external;
+    function claim() external;
 }

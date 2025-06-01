@@ -56,6 +56,8 @@ contract TopCutMarket {
 
         if (_firstSettlementTime < block.timestamp + _tradeDuration * 3) revert InvalidConstructor();
         nextSettlement = _firstSettlementTime;
+
+        activeCohortID = 2;
     }
 
     // ============================================
@@ -126,7 +128,7 @@ contract TopCutMarket {
         if (block.timestamp > settlementTime) revert WaitingToSettle();
 
         ///@dev Get the number of predictions from the next cohort because the active cohort is blocked and waiting for settlement
-        uint256 tradeCounter = (activeCohortID == 1) ? cohortSize_2 : cohortSize_1;
+        uint256 tradeCounter = (activeCohortID == 2) ? cohortSize_1 : cohortSize_2;
 
         ///@dev Enforce the ceiling of cohort size
         if (tradeCounter == MAX_COHORT_SIZE) revert CohortFull();
@@ -138,12 +140,13 @@ contract TopCutMarket {
         data.predictionOwner = user;
         data.prediction = _price;
 
-        if (activeCohortID == 1) {
-            tradesCohort_2[tradeCounter] = data;
-            cohortSize_2 = tradeCounter + 1;
-        } else {
+        ///@dev Add prediction to the next cohort, because the active cohort is blocked and waits for settlement
+        if (activeCohortID == 2) {
             tradesCohort_1[tradeCounter] = data;
             cohortSize_1 = tradeCounter + 1;
+        } else {
+            tradesCohort_2[tradeCounter] = data;
+            cohortSize_2 = tradeCounter + 1;
         }
 
         // INTERACTIONS
@@ -184,7 +187,7 @@ contract TopCutMarket {
 
         ///@dev Get the cohort size of the active cohort
         uint256 activeID = activeCohortID;
-        uint256 _cohortSize = (activeID == 1) ? cohortSize_1 : cohortSize_2; // Cache for gas savings
+        uint256 _cohortSize = (activeID == 2) ? cohortSize_2 : cohortSize_1; // Cache for gas savings
 
         ///@dev Evaluate only if there was at least 1 trade, otherwise skip to end
         uint256 cohortWinners;
@@ -208,7 +211,7 @@ contract TopCutMarket {
 
             ///@dev Loop through all predictions of the active cohort & calculate differences to settlement price
             for (uint256 i = 0; i < _cohortSize; i++) {
-                data = (activeID == 1) ? tradesCohort_1[i] : tradesCohort_2[i];
+                data = (activeID == 2) ? tradesCohort_2[i] : tradesCohort_1[i];
 
                 prediction = data.prediction;
                 diff = (prediction > settlementPrice) ? prediction - settlementPrice : settlementPrice - prediction; // Absolute difference to settlement price
@@ -245,21 +248,20 @@ contract TopCutMarket {
         nextSettlement = settlementTime + TRADE_DURATION;
 
         ///@dev Transition the active cohort 1 -> 2 or 2 -> 1 and reset the settled cohort size
-        if (activeID == 1) {
-            activeCohortID = 2;
-            cohortSize_1 = 0;
-        } else {
+        if (activeID == 2) {
             activeCohortID = 1;
             cohortSize_2 = 0;
+        } else {
+            activeCohortID = 2;
+            cohortSize_1 = 0;
         }
 
         // INTERACTIONS
         ///@dev Compensate the keeper based on the number of traders in the Cohort
         uint256 keeperReward = (_cohortSize * TRADE_SIZE * SHARE_KEEPER) / SHARE_PRECISION;
-        if (keeperReward > 0) {
-            (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
-            if (!sent) revert FailedToSendKeeperReward();
-        }
+
+        (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
+        if (!sent) revert FailedToSendKeeperReward();
 
         ///@dev Emit event that the cohort was settled
         emit CohortSettled(_cohortSize, cohortWinners, settlementTime);
@@ -289,7 +291,7 @@ contract TopCutMarket {
         (bool sent,) = payable(user).call{value: amount}("");
         if (!sent) revert FailedToSendWinnerReward();
 
-        ///@dev Update the pending distributions
+        ///@dev Emit the event that the user claimed ETH
         emit PrizesClaimed(user, amount);
     }
 

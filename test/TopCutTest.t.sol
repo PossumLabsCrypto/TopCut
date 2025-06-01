@@ -15,7 +15,7 @@ import {BrokenOracle} from "test/mocks/BrokenOracle.sol";
 import {FakeOracle} from "test/mocks/FakeOracle.sol";
 
 // ============================================
-error activeCohort();
+error cohortActive();
 error CohortFull();
 error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
@@ -57,7 +57,6 @@ contract TopCutTest is Test {
     // ETH amounts
     uint256 aliceETH = 100e18;
     uint256 bobETH = 100e18;
-    uint256 charlieETH = 100e18;
     uint256 treasuryETH = 1000000000e18;
 
     // Contract instances
@@ -121,8 +120,6 @@ contract TopCutTest is Test {
             BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
         );
 
-        dosContract = new DOScontract(address(psm), address(vault), address(market), address(refNFT));
-
         BrokenOracle brokenOracle = new BrokenOracle();
         brokenOracleMarket = new TopCutMarket(
             address(brokenOracle), address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
@@ -133,9 +130,10 @@ contract TopCutTest is Test {
             address(fakeOracle), address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
         );
 
+        dosContract = new DOScontract(address(psm), address(vault), address(fakeOracleMarket), address(refNFT));
+
         vm.deal(Alice, aliceETH);
         vm.deal(Bob, bobETH);
-        vm.deal(Charlie, charlieETH);
         vm.deal(treasury, treasuryETH);
     }
 
@@ -620,23 +618,52 @@ contract TopCutTest is Test {
         uint256 vaultReward = (TRADE_SIZE * SHARE_VAULT) / SHARE_PRECISION;
 
         vm.prank(Alice);
-        market.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
+        fakeOracleMarket.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
 
         // Verify ETH flows to frontend, vault, market
         assertEq(treasury.balance, frontendBalance + frontendReward);
         assertEq(address(vault).balance, vaultBalance + vaultReward);
-        assertEq(address(market).balance, TRADE_SIZE - frontendReward - vaultReward);
+        assertEq(address(fakeOracleMarket).balance, TRADE_SIZE - frontendReward - vaultReward);
 
         // Verify state updates (cohortSize, predictions, owners)
-        assertEq(market.predictions(0), pricePrediction);
-        assertEq(market.predictionOwners(0), Alice);
-        assertEq(market.cohortSize(), 1);
+        (address owner, uint256 prediction) = fakeOracleMarket.tradesCohort_1(0);
+
+        assertEq(prediction, pricePrediction);
+        assertEq(owner, Alice);
+        assertEq(fakeOracleMarket.cohortSize_1(), 1); // next cohort (accepting trades)
+        assertEq(fakeOracleMarket.cohortSize_2(), 0); // active cohort (blocked)
 
         // Verify that points were updated in the Vault
         assertEq(vault.loyaltyPoints(Alice), vaultReward);
         assertEq(vault.affiliatePoints(refID), vaultReward);
         assertEq(vault.loyaltyPointsLeader(), Alice);
         assertEq(vault.leadingPoints(), vaultReward);
+
+        // pass time, settle and cast prediction to the next cohort
+        vm.warp(fakeOracleMarket.nextSettlement());
+        vm.prank(Alice);
+        fakeOracleMarket.settleCohort();
+
+        vm.startPrank(Bob);
+        fakeOracleMarket.castPrediction{value: TRADE_SIZE}(treasury, 22, 110123e18);
+        fakeOracleMarket.castPrediction{value: TRADE_SIZE}(treasury, 22, 110123e18);
+        vm.stopPrank();
+
+        // Verify state updates of next cohort
+        (owner, prediction) = fakeOracleMarket.tradesCohort_2(0);
+
+        assertEq(prediction, 110123e18);
+        assertEq(owner, Bob);
+        assertEq(fakeOracleMarket.cohortSize_1(), 1); // active cohort (blocked)
+        assertEq(fakeOracleMarket.cohortSize_2(), 2); // next cohort (accepting trades)
+
+        // pass time, settle, verify resetting of cohort size
+        vm.warp(fakeOracleMarket.nextSettlement());
+        vm.prank(Alice);
+        fakeOracleMarket.settleCohort();
+
+        assertEq(fakeOracleMarket.cohortSize_1(), 0); // next cohort (just settled)
+        assertEq(fakeOracleMarket.cohortSize_2(), 2); // active cohort (blocked)
     }
 
     // Revert cases
@@ -649,20 +676,20 @@ contract TopCutTest is Test {
         vm.expectRevert(ZeroAddress.selector);
         market.castPrediction{value: TRADE_SIZE}(address(0), refID, pricePrediction);
 
-        // Scnario 2: Set a non-payable frontend address (revert ETH sending)
-        vm.prank(Alice);
-        vm.expectRevert(FailedToSendFrontendReward.selector);
-        market.castPrediction{value: TRADE_SIZE}(address(dosContract), refID, pricePrediction);
-
-        // Scenario 3: predicted price is 0
+        // Scenario 2: predicted price is 0
         vm.prank(Alice);
         vm.expectRevert(InvalidPrice.selector);
         market.castPrediction{value: TRADE_SIZE}(treasury, refID, 0);
 
-        // Scenario 4: wrong trade size / ETH
+        // Scenario 3: wrong trade size / ETH
         vm.prank(Alice);
         vm.expectRevert(InvalidTradeSize.selector);
         market.castPrediction{value: 123}(treasury, refID, pricePrediction);
+
+        // Scnario 4: Set a non-payable frontend address (revert ETH sending)
+        vm.prank(Alice);
+        vm.expectRevert(FailedToSendFrontendReward.selector);
+        market.castPrediction{value: TRADE_SIZE}(address(dosContract), refID, pricePrediction);
 
         // Scenario 5: too many predictions (cohort is full)
         vm.startPrank(treasury);
@@ -680,9 +707,9 @@ contract TopCutTest is Test {
         uint256 pricePrediction = 107123e18;
         uint256 refID = 22;
 
-        vm.warp(market.nextSettlement());
+        // Scenario 6: Market must be settled first
+        vm.warp(market.nextSettlement() + 1);
 
-        // Scenario 6: trade duration is active / too late for predictions
         vm.prank(Alice);
         vm.expectRevert(WaitingToSettle.selector);
         market.castPrediction{value: TRADE_SIZE}(treasury, refID, pricePrediction);
@@ -694,38 +721,51 @@ contract TopCutTest is Test {
         helper_predictionGrid();
 
         // verify cohort size & saved predictions
-        assertEq(fakeOracleMarket.cohortSize(), 25);
+        assertEq(fakeOracleMarket.cohortSize_1(), 25);
+        assertEq(fakeOracleMarket.cohortSize_2(), 0);
 
         // verify predictions & owners
+        address owner;
+        uint256 prediction;
         for (uint256 i = 0; i < 23; i++) {
-            assertEq(fakeOracleMarket.predictions(i), 109000e18 + (i * 100e18));
-            assertEq(fakeOracleMarket.predictionOwners(i), Bob);
+            (owner, prediction) = fakeOracleMarket.tradesCohort_1(i);
+
+            assertEq(owner, Bob);
+            assertEq(prediction, 109000e18 + (i * 100e18));
         }
 
         for (uint256 i = 0; i < 2; i++) {
-            assertEq(fakeOracleMarket.predictions(i + 23), 110330e18 + (i * 5e18));
-            assertEq(fakeOracleMarket.predictionOwners(i + 23), Alice);
+            (owner, prediction) = fakeOracleMarket.tradesCohort_1(i + 23);
+
+            assertEq(owner, Alice);
+            assertEq(prediction, 110330e18 + (i * 5e18));
         }
 
-        assertEq(fakeOracleMarket.predictions(25), 0); // end of the line (outside cohort)
-        assertEq(fakeOracleMarket.predictionOwners(25), address(0));
+        // end of the line (outside cohort)
+        (owner, prediction) = fakeOracleMarket.tradesCohort_1(25);
+        assertEq(owner, address(0));
+        assertEq(prediction, 0);
 
-        // settle cohort with active traders
+        // settle first cohort (no traders)
         //int256 fakeOraclePrice = 110333e8;
         vm.warp(fakeOracleMarket.nextSettlement());
         vm.prank(Charlie);
         fakeOracleMarket.settleCohort();
 
-        // verify expected number of winners via event & mapping
+        assertEq(fakeOracleMarket.totalPendingClaims(), 0);
 
-        // verify expected sequence of winners
-        // verify the increase in claims of winners
-        // verify the global tracker of claims
-        // verify new cohort ID
-        // verify new settlement time
+        // settle next cohort (25 traders -> 2 winners)
+        vm.warp(fakeOracleMarket.nextSettlement());
+        vm.prank(Charlie);
+        fakeOracleMarket.settleCohort();
+
+        // verify winners in aggregate + individual (Alice wins two times)
+        assertEq(fakeOracleMarket.totalPendingClaims(), 2 * WIN_SIZE);
+        assertEq(fakeOracleMarket.claimAmounts(Alice), 2 * WIN_SIZE);
+
         // verify keeper reward
-
-        // confirm that this is working with 0 traders in the cohort
+        uint256 expectedReward = (25 * SHARE_KEEPER * TRADE_SIZE) / SHARE_PRECISION;
+        assertEq(Charlie.balance, expectedReward);
     }
 
     // Revert cases
@@ -733,7 +773,7 @@ contract TopCutTest is Test {
         uint256 timeStart = block.timestamp;
 
         // Scenario 1: Cohort is still active
-        vm.expectRevert(activeCohort.selector);
+        vm.expectRevert(cohortActive.selector);
         market.settleCohort();
 
         // Scenario 2: Get a stale oracle price (time)
@@ -753,21 +793,72 @@ contract TopCutTest is Test {
         assertTrue(address(fakeOracleMarket).balance > 0);
 
         vm.warp(fakeOracleMarket.nextSettlement());
+        vm.prank(address(dosContract));
         vm.expectRevert(FailedToSendKeeperReward.selector);
         fakeOracleMarket.settleCohort();
     }
 
     // test the claiming function
     function testSuccess_claim() public {
-        // verify the updated user claims
+        // cast 25 predictions
+        helper_predictionGrid();
+
+        // Transition to active, then settle
+        vm.startPrank(Bob);
+        vm.warp(fakeOracleMarket.nextSettlement());
+        fakeOracleMarket.settleCohort();
+        vm.warp(fakeOracleMarket.nextSettlement());
+        fakeOracleMarket.settleCohort();
+        vm.stopPrank();
+
+        // verify the updated user claims (Alice won 2 times)
+        assertEq(fakeOracleMarket.claimAmounts(Alice), 2 * WIN_SIZE);
+
         // verify the updated global claim tracker
-        // verify the user's ETH balance increase
+        assertEq(fakeOracleMarket.totalPendingClaims(), 2 * WIN_SIZE);
+
+        // Claim & verify the user's ETH balance increase
+        uint256 balance = Alice.balance;
+
+        vm.prank(Alice);
+        fakeOracleMarket.claim();
+
+        assertEq(Alice.balance, balance + (2 * WIN_SIZE));
     }
 
     // Revert cases
     function testRevert_claim() public {
         // Scenario 1: user has no claims
+        vm.startPrank(Alice);
+
+        vm.expectRevert(NoClaims.selector);
+        market.claim();
+
         // Scenario 2: contract has not enough balance to pay out user
-        // Scenario 3: user is a contract that cannot receive ETH
+        fakeOracleMarket.castPrediction{value: TRADE_SIZE}(treasury, 22, 1234567);
+
+        vm.warp(fakeOracleMarket.nextSettlement());
+        fakeOracleMarket.settleCohort();
+
+        dosContract.castVulnerablePrediction{value: TRADE_SIZE}(treasury, 22, 555);
+
+        vm.warp(fakeOracleMarket.nextSettlement());
+        fakeOracleMarket.settleCohort();
+
+        vm.expectRevert(InsufficientBalance.selector);
+        fakeOracleMarket.claim();
+
+        // Scenario 3: User cannot receive ETH
+        vm.warp(fakeOracleMarket.nextSettlement());
+        fakeOracleMarket.settleCohort();
+        for (uint256 i = 0; i < 12; i++) {
+            fakeOracleMarket.castPrediction{value: TRADE_SIZE}(treasury, 22, 1234567);
+        }
+
+        vm.stopPrank();
+
+        vm.prank(address(dosContract));
+        vm.expectRevert(FailedToSendWinnerReward.selector);
+        fakeOracleMarket.claim();
     }
 }

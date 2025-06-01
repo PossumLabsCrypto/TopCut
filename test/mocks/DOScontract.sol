@@ -41,4 +41,9 @@ contract DOScontract is ERC721Holder {
     function claimAP(uint256 _refID, uint256 _pointsRedeemed, uint256 _minReceived, uint256 _deadline) external {
         vault.claimAffiliateReward(_refID, _pointsRedeemed, _minReceived, _deadline);
     }
+
+    function castVulnerablePrediction(address _frontend, uint256 _refID, uint256 _price) external payable {
+        uint256 tradeSize = msg.value;
+        market.castPrediction{value: tradeSize}(_frontend, _refID, _price);
+    }
 }
