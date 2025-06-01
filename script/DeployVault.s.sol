@@ -9,7 +9,7 @@ contract DeployVault is Script {
     function setUp() public {}
 
     bytes32 salt = "DeFiPrecisionMarkets";
-    uint256 firstDistribution = 1749391200;
+    uint256 firstDistribution = 1749391200; // Jun 8
 
     function run() public returns (address vaultAddress) {
         vm.startBroadcast();
@@ -27,4 +27,4 @@ contract DeployVault is Script {
     }
 }
 
-// forge script script/DeployVault.s.sol --rpc-url $ARB_SEPOLIA_URL --private-key $PRIVATE_KEY --broadcast --verify --verifier etherscan --etherscan-api-key $ETHERSCAN_API_KEY --optimize --optimizer-runs 9999
+// forge script script/DeployVault.s.sol --rpc-url $ARB_MAINNET_URL --private-key $PRIVATE_KEY --broadcast --verify --verifier etherscan --etherscan-api-key $ETHERSCAN_API_KEY --optimize --optimizer-runs 9999

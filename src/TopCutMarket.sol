@@ -54,7 +54,7 @@ contract TopCutMarket {
         if (_tradeDuration < 86400) revert InvalidConstructor(); // min 24h
         TRADE_DURATION = _tradeDuration;
 
-        if (_firstSettlementTime < block.timestamp + _tradeDuration * 3) revert InvalidConstructor();
+        if (_firstSettlementTime < block.timestamp + _tradeDuration * 2) revert InvalidConstructor();
         nextSettlement = _firstSettlementTime;
 
         activeCohortID = 2;
