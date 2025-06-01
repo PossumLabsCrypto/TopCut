@@ -5,7 +5,7 @@ import {Script, console} from "lib/forge-std/src/Script.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";
 import {TopCutVault} from "src/TopCutVault.sol";
 
-contract DeployMarkets is Script {
+contract DeployDailyMarkets is Script {
     function setUp() public {}
 
     address vault = address(0);
@@ -46,4 +46,4 @@ contract DeployMarkets is Script {
     }
 }
 
-// forge script script/DeployMarkets.s.sol --rpc-url $ARB_MAINNET_URL --private-key $PRIVATE_KEY --broadcast --verify --verifier etherscan --etherscan-api-key $ETHERSCAN_API_KEY --optimize --optimizer-runs 9999
+// forge script script/DeployDailyMarkets.s.sol --rpc-url $ARB_MAINNET_URL --private-key $PRIVATE_KEY --broadcast --verify --verifier etherscan --etherscan-api-key $ETHERSCAN_API_KEY --optimize --optimizer-runs 9999

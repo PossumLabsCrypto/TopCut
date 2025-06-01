@@ -7,5 +7,9 @@ libs = ["lib"]
 
 remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"]
 
+# Optimizer
+optimizer = true
+optimizer_runs = 9999
+
 [rpc_endpoints]
 alchemy_arbitrum_api = "${ARB_MAINNET_URL}"
