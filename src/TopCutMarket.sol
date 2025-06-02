@@ -63,7 +63,7 @@ contract TopCutMarket {
     // ============================================
     // ==                STORAGE                 ==
     // ============================================
-    IChainlink private immutable ORACLE;
+    IChainlink public immutable ORACLE;
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
     uint256 private immutable MAX_COHORT_SIZE;

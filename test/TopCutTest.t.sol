@@ -178,6 +178,7 @@ contract TopCutTest is Test {
         assertEq(nft.totalSupply(), 40);
 
         // Market
+        assertEq(address(market.ORACLE()), BTC_USD_CHAINLINK_ORACLE);
         assertEq(market.SHARE_PRECISION(), SHARE_PRECISION);
         assertEq(market.SHARE_VAULT(), SHARE_VAULT);
         assertEq(market.SHARE_FRONTEND(), SHARE_FRONTEND);

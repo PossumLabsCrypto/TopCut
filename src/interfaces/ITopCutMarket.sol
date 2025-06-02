@@ -3,6 +3,7 @@ pragma solidity =0.8.19;
 
 interface ITopCutMarket {
     // storage
+    function ORACLE() external view returns (uint256);
     function SHARE_PRECISION() external view returns (uint256);
     function SHARE_VAULT() external view returns (uint256);
     function SHARE_FRONTEND() external view returns (uint256);
