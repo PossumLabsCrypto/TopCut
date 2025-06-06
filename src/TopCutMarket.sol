@@ -11,6 +11,7 @@ error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
 error FailedToSendKeeperReward();
 error InsufficientBalance();
+error InvalidAmount();
 error InvalidCohortID();
 error InvalidConstructor();
 error InvalidPrice();
@@ -72,9 +73,11 @@ contract TopCutMarket {
     uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
     uint256 public constant SHARE_FRONTEND = 30; // 3% of trade volume
     uint256 public constant SHARE_KEEPER = 10; // 1% of trade volume
+
     uint256 private immutable VAULT_REWARD;
     uint256 private immutable FRONTEND_REWARD;
     uint256 private immutable KEEPER_REWARD_UNIT;
+    uint256 private constant MIN_KEEPER_REWARD = 1e15; // min 0.001 ETH reward for settling a cohort
 
     ITopCutVault public immutable TOP_CUT_VAULT;
     uint256 public immutable TRADE_DURATION; // The duration when no new trades are accepted before a cohort is settled
@@ -97,8 +100,9 @@ contract TopCutMarket {
     mapping(uint256 tradeID => tradeData) public tradesCohort_2;
 
     mapping(address trader => uint256 claim) public claimAmounts; // Amount of ETH payouts a winner can claim
-
     uint256 public totalPendingClaims; // Sum of all claim amounts
+
+    mapping(address keeper => uint256 claim) public keeperRewards; // Amount of ETH a keeper can claim
 
     // ============================================
     // ==                EVENTS                  ==
@@ -260,11 +264,11 @@ contract TopCutMarket {
         }
 
         // INTERACTIONS
-        ///@dev Compensate the keeper based on the number of traders in the Cohort
-        uint256 keeperReward = _cohortSize * KEEPER_REWARD_UNIT;
-
-        (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
-        if (!sent) revert FailedToSendKeeperReward();
+        ///@dev Increase keeper rewards based on the number of traders in the Cohort & ensure a minimum compensation
+        uint256 keeperReward = (_cohortSize * KEEPER_REWARD_UNIT < MIN_KEEPER_REWARD)
+            ? MIN_KEEPER_REWARD
+            : _cohortSize * KEEPER_REWARD_UNIT;
+        keeperRewards[msg.sender] += keeperReward;
 
         ///@dev Emit event that the cohort was settled
         emit CohortSettled(_cohortSize, cohortWinners, settlementTime);
@@ -279,8 +283,7 @@ contract TopCutMarket {
         if (amount == 0) revert NoClaims();
 
         ///@dev Ensure that the contract has enough ETH
-        uint256 balance = address(this).balance;
-        if (amount > balance) revert InsufficientBalance();
+        if (amount > address(this).balance) revert InsufficientBalance();
 
         // EFFECTS
         ///@dev Update the pending amount
@@ -296,6 +299,28 @@ contract TopCutMarket {
 
         ///@dev Emit the event that the user claimed ETH
         emit PrizesClaimed(user, amount);
+    }
+
+    ///@notice Enable keepers who settle markets to claim their ETH rewards
+    ///@dev Make sure the recipient can receive ETH
+    ///@dev No event because this function is only relevant for experts and does not need to be tracked
+    function claimKeeperReward(address _recipient, uint256 _amountETH) external {
+        // CHECKS
+        ///@dev Check if there is sufficient ETH in the contract
+        if (_amountETH > address(this).balance) revert InsufficientBalance();
+
+        ///@dev Validate the amount to be claimed by the keeper
+        uint256 rewards = keeperRewards[msg.sender];
+        if (_amountETH > rewards) revert InvalidAmount();
+
+        // EFFECTS
+        ///@dev Deduct the claimed amount from rewards
+        keeperRewards[msg.sender] = rewards - _amountETH;
+
+        // INTERACTIONS
+        ///@dev Distribute ETH to the recipient as specified by the keeper
+        (bool sent,) = payable(_recipient).call{value: _amountETH}("");
+        if (!sent) revert FailedToSendKeeperReward();
     }
 
     // ============================================
