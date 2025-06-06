@@ -32,7 +32,7 @@ interface ITopCutMarket {
     function totalPendingClaims() external view returns (uint256);
 
     // functions
-    function castPrediction(address _frontend, uint256 _refID, uint256 _price) external payable;
+    function castPrediction(address _frontend, uint256 _refID, uint256 _price, uint256 _cohortID) external payable;
     function settleCohort() external;
     function claim() external;
 }
