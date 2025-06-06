@@ -189,9 +189,7 @@ contract TopCutVault {
         // EFFECTS
         ///@dev Increase the redeemed point tracker ("pool size") until maximum is reached
         if (totalRedeemedAP < MAX_AP_REDEEMED) {
-            totalRedeemedAP = (totalRedeemedAP + affiliatePoints[_refID] < MAX_AP_REDEEMED)
-                ? totalRedeemedAP + affiliatePoints[_refID]
-                : MAX_AP_REDEEMED;
+            totalRedeemedAP = (totalRedeemedAP + points < MAX_AP_REDEEMED) ? totalRedeemedAP + points : MAX_AP_REDEEMED;
         }
 
         ///@dev Update the affiliate points of the NFT
