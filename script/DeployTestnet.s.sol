@@ -9,7 +9,6 @@ import {FakeOracle} from "test/mocks/FakeOracle.sol";
 contract DeployTestnet is Script {
     function setUp() public {}
 
-    uint256 maxChohortSize = 3300;
     uint256 tradeSize = 1e16; //  0.01 ETH
     uint256 tradeDuration = 86400; // 24 hours
     uint256 firstSettlement = 1749567600; // Jun 10, 3pm UTC
@@ -43,23 +42,19 @@ contract DeployTestnet is Script {
         vaultAd = address(vault);
 
         // BTC 1
-        TopCutMarket market1 =
-            new TopCutMarket(oracleAd, vaultAd, maxChohortSize, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket market1 = new TopCutMarket(oracleAd, vaultAd, tradeSize, tradeDuration, firstSettlement);
         market1Ad = address(market1);
 
         // BTC 2
-        TopCutMarket market2 =
-            new TopCutMarket(oracleAd, vaultAd, maxChohortSize, tradeSize * 10, tradeDuration, firstSettlement);
+        TopCutMarket market2 = new TopCutMarket(oracleAd, vaultAd, tradeSize * 10, tradeDuration, firstSettlement);
         market2Ad = address(market2);
 
         // BTC
-        TopCutMarket market3 =
-            new TopCutMarket(oracleAd, vaultAd, maxChohortSize, tradeSize, tradeDuration * 7, firstSettlement_weekly);
+        TopCutMarket market3 = new TopCutMarket(oracleAd, vaultAd, tradeSize, tradeDuration * 7, firstSettlement_weekly);
         market3Ad = address(market3);
 
         // ETH
-        TopCutMarket market4 =
-            new TopCutMarket(oracleAd, vaultAd, maxChohortSize, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket market4 = new TopCutMarket(oracleAd, vaultAd, tradeSize, tradeDuration, firstSettlement);
         market4Ad = address(market4);
 
         vm.stopBroadcast();

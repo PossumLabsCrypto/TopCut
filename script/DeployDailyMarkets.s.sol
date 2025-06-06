@@ -9,7 +9,6 @@ contract DeployDailyMarkets is Script {
     function setUp() public {}
 
     address vault = address(0);
-    uint256 maxChohortSize = 3300;
     uint256 tradeSize = 1e16; //  0.01 ETH
     uint256 tradeDuration = 86400; // 24 hours
     uint256 firstSettlement = 1749135600; // Jun 05, 3pm UTC
@@ -30,16 +29,13 @@ contract DeployDailyMarkets is Script {
         vm.store(address(this), bytes32("optimizerRuns"), bytes32(uint256(9999)));
 
         // Create contract instances
-        TopCutMarket marketBTC =
-            new TopCutMarket(btcFeed, vault, maxChohortSize, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket marketBTC = new TopCutMarket(btcFeed, vault, tradeSize, tradeDuration, firstSettlement);
         marketAddresses[0] = address(marketBTC);
 
-        TopCutMarket marketETH =
-            new TopCutMarket(ethFeed, vault, maxChohortSize, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket marketETH = new TopCutMarket(ethFeed, vault, tradeSize, tradeDuration, firstSettlement);
         marketAddresses[1] = address(marketETH);
 
-        TopCutMarket marketDOGE =
-            new TopCutMarket(dogeFeed, vault, maxChohortSize, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket marketDOGE = new TopCutMarket(dogeFeed, vault, tradeSize, tradeDuration, firstSettlement);
         marketAddresses[2] = address(marketDOGE);
 
         vm.stopBroadcast();

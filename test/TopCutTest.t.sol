@@ -83,7 +83,7 @@ contract TopCutTest is Test {
     uint256 constant TRADE_DURATION = 86400;
     uint256 constant TRADE_SIZE = 1e16;
     uint256 constant WIN_SIZE = 1e17;
-    uint256 constant MAX_COHORT_SIZE = 3300;
+    uint256 constant MAX_COHORT_SIZE = 2200;
     address constant BTC_USD_CHAINLINK_ORACLE = 0x6ce185860a4963106506C203335A2910413708e9;
     IChainlink constant oracle = IChainlink(BTC_USD_CHAINLINK_ORACLE);
     uint256 constant ORACLE_RESPONSE_AT_FORK_HEIGHT = 11060800999999; // 110608.001 BTC/USD
@@ -116,19 +116,16 @@ contract TopCutTest is Test {
         // Create contract instances
         vault = new TopCutVault(SALT, firstDistribution);
         refNFT = ITopCutNFT(vault.AFFILIATE_NFT());
-        market = new TopCutMarket(
-            BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
-        );
+        market =
+            new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
 
         BrokenOracle brokenOracle = new BrokenOracle();
-        brokenOracleMarket = new TopCutMarket(
-            address(brokenOracle), address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
-        );
+        brokenOracleMarket =
+            new TopCutMarket(address(brokenOracle), address(vault), TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
 
         FakeOracle fakeOracle = new FakeOracle();
-        fakeOracleMarket = new TopCutMarket(
-            address(fakeOracle), address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
-        );
+        fakeOracleMarket =
+            new TopCutMarket(address(fakeOracle), address(vault), TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
 
         dosContract = new DOScontract(address(psm), address(vault), address(fakeOracleMarket), address(refNFT));
 
@@ -214,41 +211,24 @@ contract TopCutTest is Test {
     function testRevert_marketConstructor() public {
         // Invalid oracle
         vm.expectRevert(InvalidConstructor.selector);
-        new TopCutMarket(address(0), address(vault), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
+        new TopCutMarket(address(0), address(vault), TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
 
         // Invalid vault
         vm.expectRevert(InvalidConstructor.selector);
-        new TopCutMarket(
-            BTC_USD_CHAINLINK_ORACLE, address(0), MAX_COHORT_SIZE, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
-        );
-
-        // Too small cohort
-        vm.expectRevert(InvalidConstructor.selector);
-        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), 11, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
-
-        // Too large cohort
-        vm.expectRevert(InvalidConstructor.selector);
-        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), 1e5, TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
+        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(0), TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
 
         // Invalid trade size
         vm.expectRevert(InvalidConstructor.selector);
-        new TopCutMarket(
-            BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, 1e5, TRADE_DURATION, FIRST_SETTLEMENT
-        );
+        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_DURATION, FIRST_SETTLEMENT);
 
         // Too short trade duration
         vm.expectRevert(InvalidConstructor.selector);
-        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), MAX_COHORT_SIZE, TRADE_SIZE, 1111, FIRST_SETTLEMENT);
+        new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, address(vault), TRADE_SIZE, 1111, FIRST_SETTLEMENT);
 
         // Invalid first settlement date
         vm.expectRevert(InvalidConstructor.selector);
         new TopCutMarket(
-            BTC_USD_CHAINLINK_ORACLE,
-            address(vault),
-            MAX_COHORT_SIZE,
-            TRADE_SIZE,
-            TRADE_DURATION,
-            block.timestamp + TRADE_DURATION
+            BTC_USD_CHAINLINK_ORACLE, address(vault), TRADE_SIZE, TRADE_DURATION, block.timestamp + TRADE_DURATION
         );
     }
 
