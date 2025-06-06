@@ -10,7 +10,6 @@ error CohortFull();
 error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
 error FailedToSendKeeperReward();
-error FailedToSkimSurplus();
 error InsufficientBalance();
 error InvalidCohortID();
 error InvalidConstructor();
@@ -55,6 +54,10 @@ contract TopCutMarket {
         nextSettlement = _firstSettlementTime;
 
         activeCohortID = 2;
+
+        VAULT_REWARD = (TRADE_SIZE * SHARE_VAULT) / SHARE_PRECISION;
+        FRONTEND_REWARD = (TRADE_SIZE * SHARE_FRONTEND) / SHARE_PRECISION;
+        KEEPER_REWARD_UNIT = (TRADE_SIZE * SHARE_KEEPER) / SHARE_PRECISION;
     }
 
     // ============================================
@@ -69,6 +72,9 @@ contract TopCutMarket {
     uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
     uint256 public constant SHARE_FRONTEND = 30; // 3% of trade volume
     uint256 public constant SHARE_KEEPER = 10; // 1% of trade volume
+    uint256 private immutable VAULT_REWARD;
+    uint256 private immutable FRONTEND_REWARD;
+    uint256 private immutable KEEPER_REWARD_UNIT;
 
     ITopCutVault public immutable TOP_CUT_VAULT;
     uint256 public immutable TRADE_DURATION; // The duration when no new trades are accepted before a cohort is settled
@@ -110,7 +116,6 @@ contract TopCutMarket {
     ///@dev Predictions are not accepted within TRADE_DURATION before settlement
     function castPrediction(address _frontend, uint256 _refID, uint256 _price, uint256 _cohortID) external payable {
         address user = msg.sender;
-        uint256 tradeSize = msg.value;
 
         // CHECKS
         ///@dev Validate frontend beneficiary and price prediction
@@ -118,7 +123,7 @@ contract TopCutMarket {
         if (_price == 0) revert InvalidPrice();
 
         ///@dev Enforce uniform trade size of each prediction
-        if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
+        if (msg.value != TRADE_SIZE) revert InvalidTradeSize();
 
         ///@dev Ensure that the prediction is entered in the valid cohort (next cohort)
         if (_cohortID == activeCohortID) revert InvalidCohortID();
@@ -152,12 +157,10 @@ contract TopCutMarket {
         // INTERACTIONS
         ///@dev Update Loyalty Points and Affiliate Points in the TopCut Vault
         ///@dev Send the Vault rev share with the function call
-        uint256 vaultReward = (tradeSize * SHARE_VAULT) / SHARE_PRECISION;
-        TOP_CUT_VAULT.updatePoints{value: vaultReward}(user, _refID);
+        TOP_CUT_VAULT.updatePoints{value: VAULT_REWARD}(user, _refID);
 
         ///@dev Send frontend reward
-        uint256 frontendReward = (tradeSize * SHARE_FRONTEND) / SHARE_PRECISION;
-        (bool sent,) = payable(_frontend).call{value: frontendReward}("");
+        (bool sent,) = payable(_frontend).call{value: FRONTEND_REWARD}("");
         if (!sent) revert FailedToSendFrontendReward();
 
         ///@dev Emit event that informs about this prediction
@@ -258,7 +261,7 @@ contract TopCutMarket {
 
         // INTERACTIONS
         ///@dev Compensate the keeper based on the number of traders in the Cohort
-        uint256 keeperReward = (_cohortSize * TRADE_SIZE * SHARE_KEEPER) / SHARE_PRECISION;
+        uint256 keeperReward = _cohortSize * KEEPER_REWARD_UNIT;
 
         (bool sent,) = payable(msg.sender).call{value: keeperReward}("");
         if (!sent) revert FailedToSendKeeperReward();
