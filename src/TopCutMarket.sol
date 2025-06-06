@@ -225,7 +225,7 @@ contract TopCutMarket {
                     winnerDiffs[i] = diff;
                     owners[i] = owner;
 
-                    if (diff > currentMaxValue) {
+                    if (diff >= currentMaxValue) {
                         currentMaxValue = diff;
                         currentMaxIndex = i;
                     }
