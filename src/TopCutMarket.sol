@@ -12,6 +12,7 @@ error FailedToSendFrontendReward();
 error FailedToSendKeeperReward();
 error FailedToSkimSurplus();
 error InsufficientBalance();
+error InvalidCohortID();
 error InvalidConstructor();
 error InvalidPrice();
 error InvalidTradeSize();
@@ -75,7 +76,7 @@ contract TopCutMarket {
     uint256 public immutable WIN_SIZE; // Winning trades get back 10x of the TradeSize
     uint256 public constant PREDICTION_DECIMALS = 18; // Decimals of the price input by traders - oracle price is normalized to match
 
-    uint256 private activeCohortID;
+    uint256 public activeCohortID;
     uint256 public cohortSize_1; // Tracks trades in the cohort 1
     uint256 public cohortSize_2; // Tracks trades in the cohort 2
 
@@ -107,7 +108,7 @@ contract TopCutMarket {
     ///@dev Frontends add their wallet address to receive a volume share as compensation for providing access
     ///@dev A referral ID must be assigned with each trade and it must be an existing TopCut NFT ID
     ///@dev Predictions are not accepted within TRADE_DURATION before settlement
-    function castPrediction(address _frontend, uint256 _refID, uint256 _price) external payable {
+    function castPrediction(address _frontend, uint256 _refID, uint256 _price, uint256 _cohortID) external payable {
         address user = msg.sender;
         uint256 tradeSize = msg.value;
 
@@ -118,6 +119,9 @@ contract TopCutMarket {
 
         ///@dev Enforce uniform trade size of each prediction
         if (tradeSize != TRADE_SIZE) revert InvalidTradeSize();
+
+        ///@dev Ensure that the prediction is entered in the valid cohort (next cohort)
+        if (_cohortID == activeCohortID) revert InvalidCohortID();
 
         ///@dev Only allow predictions if the settlement of the active cohort is not overdue
         uint256 settlementTime = nextSettlement;

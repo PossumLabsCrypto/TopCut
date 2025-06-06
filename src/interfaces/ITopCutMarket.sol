@@ -15,6 +15,7 @@ interface ITopCutMarket {
     function WIN_SIZE() external view returns (uint256);
     function PREDICTION_DECIMALS() external view returns (uint256);
 
+    function activeCohortID() external view returns (uint256);
     function cohortSize_1() external view returns (uint256);
     function cohortSize_2() external view returns (uint256);
     function nextSettlement() external view returns (uint256);
