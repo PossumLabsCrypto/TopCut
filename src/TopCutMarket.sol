@@ -32,7 +32,6 @@ contract TopCutMarket {
     constructor(
         address _oracleContract,
         address _topCutVault,
-        uint256 _maxCohortSize,
         uint256 _tradeSize,
         uint256 _tradeDuration,
         uint256 _firstSettlementTime
@@ -43,9 +42,6 @@ contract TopCutMarket {
 
         if (_topCutVault == address(0)) revert InvalidConstructor();
         TOP_CUT_VAULT = ITopCutVault(_topCutVault);
-
-        if (_maxCohortSize < 330 || _maxCohortSize > 3300) revert InvalidConstructor();
-        MAX_COHORT_SIZE = _maxCohortSize;
 
         if (_tradeSize < 1e16) revert InvalidConstructor(); // min 0.01
         TRADE_SIZE = _tradeSize;
@@ -66,7 +62,7 @@ contract TopCutMarket {
     IChainlink public immutable ORACLE;
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
-    uint256 private immutable MAX_COHORT_SIZE;
+    uint256 private constant MAX_COHORT_SIZE = 2200;
 
     uint256 public constant SHARE_PRECISION = 1000;
     uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
