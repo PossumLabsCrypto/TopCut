@@ -5,7 +5,7 @@ import {IChainlink} from "./interfaces/IChainlink.sol";
 import {ITopCutVault} from "./interfaces/ITopCutVault.sol";
 
 // ============================================
-error cohortActive();
+error CohortActive();
 error CohortFull();
 error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
@@ -178,7 +178,7 @@ contract TopCutMarket {
         // CHECKS
         ///@dev Ensure that the settlement time is reached
         uint256 settlementTime = nextSettlement;
-        if (block.timestamp < settlementTime) revert cohortActive();
+        if (block.timestamp < settlementTime) revert CohortActive();
 
         ///@dev Get the settlement price and timestamp from the oracle
         (, int256 price,, uint256 updatedAt,) = ORACLE.latestRoundData();
