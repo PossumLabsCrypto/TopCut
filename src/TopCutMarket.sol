@@ -69,7 +69,7 @@ contract TopCutMarket {
     // ============================================
     IChainlink public immutable ORACLE;
     IChainlink private constant SEQUENCER_UPTIME_FEED = IChainlink(0xFdB631F5EE196F0ed6FAa767959853A9F217697D); // liveness feed for Chainlink on Arbitrum
-    uint256 private constant ORACLE_THRESHOLD_TIME = 900; // 15 minutes threshold for price freshness & grace period after sequencer reboot
+    uint256 private constant ORACLE_THRESHOLD_TIME = 3600; // 1h threshold for price freshness & grace period after sequencer reboot
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
     uint256 private constant MAX_COHORT_SIZE = 2200;
