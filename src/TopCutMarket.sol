@@ -5,11 +5,13 @@ import {IChainlink} from "./interfaces/IChainlink.sol";
 import {ITopCutVault} from "./interfaces/ITopCutVault.sol";
 
 // ============================================
+error BrokenOraclePrice();
 error CohortActive();
 error CohortFull();
 error FailedToSendWinnerReward();
 error FailedToSendFrontendReward();
 error FailedToSendKeeperReward();
+error GracePeriodNotOver();
 error InsufficientBalance();
 error InvalidAmount();
 error InvalidCohortID();
@@ -17,8 +19,9 @@ error InvalidConstructor();
 error InvalidPrice();
 error InvalidTradeSize();
 error NoClaims();
-error BrokenOraclePrice();
-error StaleOraclePrice();
+error RoundNotComplete();
+error SequencerDown();
+error StalePrice();
 error WaitingToSettle();
 error ZeroAddress();
 // ============================================
@@ -65,6 +68,8 @@ contract TopCutMarket {
     // ==                STORAGE                 ==
     // ============================================
     IChainlink public immutable ORACLE;
+    IChainlink private constant SEQUENCER_UPTIME_FEED = IChainlink(0xFdB631F5EE196F0ed6FAa767959853A9F217697D); // liveness feed for Chainlink on Arbitrum
+    uint256 private constant ORACLE_THRESHOLD_TIME = 900; // 15 minutes threshold for price freshness & grace period after sequencer reboot
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
     uint256 private constant MAX_COHORT_SIZE = 2200;
@@ -180,14 +185,15 @@ contract TopCutMarket {
         uint256 settlementTime = nextSettlement;
         if (block.timestamp < settlementTime) revert CohortActive();
 
-        ///@dev Get the settlement price and timestamp from the oracle
-        (, int256 price,, uint256 updatedAt,) = ORACLE.latestRoundData();
+        ///@dev Ensure that the L2 sequencer is live and was not restarted just recently
+        _checkSequencerStatus();
 
-        ///@dev Ensure that the oracle price was updated after or at the settlement time
-        if (updatedAt < settlementTime) revert StaleOraclePrice();
+        ///@dev Get the settlement price and timestamps from the oracle
+        (uint80 roundId, int256 price, /*uint256 startedAt*/, uint256 updatedAt, uint80 answeredInRound) =
+            ORACLE.latestRoundData();
 
-        ///@dev Sanity check to filter out a bad oracle feed (0 or negative)
-        if (price < 1) revert BrokenOraclePrice();
+        ///@dev Perform validation checks on the oracle feed
+        _validatePriceData(roundId, price, updatedAt, answeredInRound);
 
         ///@dev Typecast oracle price to uint256 and normalize to prediction input precision
         uint256 settlementPrice = (uint256(price) * (10 ** PREDICTION_DECIMALS)) / (10 ** ORACLE_DECIMALS);
@@ -240,7 +246,7 @@ contract TopCutMarket {
                     owners[currentMaxIndex] = owner;
 
                     ///@dev Find the new maximum value in the array (worst prediction among the winners)
-                    currentMaxIndex = findMaxIndex(winnerDiffs);
+                    currentMaxIndex = _findMaxIndex(winnerDiffs);
                     currentMaxValue = winnerDiffs[currentMaxIndex];
                 }
             }
@@ -327,12 +333,57 @@ contract TopCutMarket {
     // ==          INTERNAL FUNCTIONS            ==
     // ============================================
     /// @notice Find the index of the largest number in a memory array
-    function findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
+    function _findMaxIndex(uint256[] memory array) private pure returns (uint256 maxIndex) {
         ///@dev Presume that the largest number is at index 0, then search rest of the array
         for (uint256 i = 1; i < array.length; i++) {
             if (array[i] > array[maxIndex]) {
                 maxIndex = i;
             }
         }
+    }
+
+    ///@notice Ensures that the L2 sequencer is live and that a grace period has passed since restart
+    function _checkSequencerStatus() internal view {
+        (
+            /*uint80 roundID*/
+            ,
+            int256 answer,
+            uint256 startedAt,
+            /*uint256 updatedAt*/
+            ,
+            /*uint80 answeredInRound*/
+        ) = SEQUENCER_UPTIME_FEED.latestRoundData();
+
+        // Answer == 0: Sequencer is up
+        // Answer == 1: Sequencer is down
+        bool isSequencerUp = answer == 0;
+        if (!isSequencerUp) {
+            revert SequencerDown();
+        }
+
+        // Make sure grace period has passed after sequencer comes back up
+        uint256 timeSinceUp = block.timestamp - startedAt;
+        if (timeSinceUp <= ORACLE_THRESHOLD_TIME) {
+            revert GracePeriodNotOver();
+        }
+    }
+
+    ///@notice Validates the data provided by Chainlink
+    function _validatePriceData(uint80 roundId, int256 price, uint256 updatedAt, uint80 answeredInRound)
+        internal
+        view
+    {
+        // Check for stale data
+        if (answeredInRound < roundId) revert StalePrice();
+        if (block.timestamp - updatedAt > ORACLE_THRESHOLD_TIME) revert StalePrice();
+
+        // Check for round completion
+        if (updatedAt == 0) revert RoundNotComplete();
+
+        // Ensure the price was received after the settlement time
+        if (updatedAt < nextSettlement) revert StalePrice();
+
+        // Check for valid price
+        if (price <= 0) revert InvalidPrice();
     }
 }
