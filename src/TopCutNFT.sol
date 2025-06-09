@@ -19,7 +19,6 @@ error InsufficientPayment();
 contract TopCutNFT is ERC721URIStorage {
     constructor(string memory _name, string memory _symbol) ERC721(_name, _symbol) {
         TOPCUT_VAULT = msg.sender;
-        mintPriceETH = START_MINT_PRICE;
 
         // Mint initial NFT budget to the treasury
         for (uint256 i = 0; i < 40; i++) {
@@ -30,14 +29,12 @@ contract TopCutNFT is ERC721URIStorage {
     // ============================================
     // ==                STORAGE                 ==
     // ============================================
-    uint256 private constant START_MINT_PRICE = 1e17; // 0.1 ETH
-    uint256 private constant MINT_PRICE_INCREASE = 1e16; // +0.01 ETH per mint
     address private constant TREASURY = 0xa0BFD02a7a47CBCA7230E03fbf04A196C3E771E3;
 
+    uint256 public constant MINT_FEE_ETH = 1e18; // 1 ETH per mint
     address public immutable TOPCUT_VAULT;
     string public metadataURI = "420g02n230f203f"; ////////// -------------------->>> UPDATE IPFS METADATA
 
-    uint256 public mintPriceETH;
     uint256 public totalSupply;
 
     // ============================================
@@ -46,19 +43,18 @@ contract TopCutNFT is ERC721URIStorage {
     ///@notice Enable anyone to mint a new NFT when paying the ETH price
     function mint() external payable returns (uint256 nftID) {
         ///@dev Check for sufficient ETH payment
-        if (msg.value != mintPriceETH) revert InsufficientPayment();
+        if (msg.value != MINT_FEE_ETH) revert InsufficientPayment();
 
         ///@dev mint the NFT to the caller
         _safeMint(msg.sender, totalSupply);
         _setTokenURI(totalSupply, metadataURI);
 
-        ///@dev Update supply and price trackers
+        ///@dev Update supply & ID
         nftID = totalSupply;
         totalSupply++;
-        mintPriceETH += MINT_PRICE_INCREASE;
 
         ///@dev Send the received ETH to the TopCut Vault
-        ///@dev Sending ETH cannot fail because Vault always have a receive() function
+        ///@dev Sending ETH cannot fail because the Vault always has a receive() function
         uint256 contractBalance = address(this).balance;
         (bool sent,) = payable(TOPCUT_VAULT).call{value: contractBalance}("");
         sent = true; // avoid unused variable warning
