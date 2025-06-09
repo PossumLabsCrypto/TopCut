@@ -139,7 +139,7 @@ contract TopCutMarket {
 
         ///@dev Only allow predictions if the settlement of the active cohort is not overdue
         uint256 settlementTime = nextSettlement;
-        if (block.timestamp > settlementTime) revert WaitingToSettle();
+        if (block.timestamp >= settlementTime) revert WaitingToSettle();
 
         ///@dev Get the number of predictions from the next cohort because the active cohort is blocked and waiting for settlement
         uint256 tradeCounter = (activeCohortID == 2) ? cohortSize_1 : cohortSize_2;
