@@ -32,7 +32,7 @@ error ZeroAddress();
  */
 contract TopCutVault {
     constructor(bytes32 _salt, uint256 _firstDistributionTime) {
-        ///@dev Enforce a minimum of 2 weeks from deployment until distributing the first loyalty reward
+        ///@dev Enforce a minimum delay from deployment until distributing the first loyalty reward
         if (_firstDistributionTime < block.timestamp + DISTRIBUTION_INTERVAL) revert InvalidConstructor();
         nextDistributionTime = _firstDistributionTime;
 
