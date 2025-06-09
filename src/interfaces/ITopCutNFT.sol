@@ -9,5 +9,5 @@ interface ITopCutNFT {
 
     function TOPCUT_VAULT() external view returns (address);
     function metadataURI() external view returns (string memory);
-    function mintPriceETH() external view returns (uint256);
+    function MINT_FEE_ETH() external view returns (uint256);
 }
