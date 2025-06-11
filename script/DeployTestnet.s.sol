@@ -5,6 +5,7 @@ import {Script, console} from "lib/forge-std/src/Script.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";
 import {TopCutVault} from "src/TopCutVault.sol";
 import {FakeOracle} from "test/mocks/FakeOracle.sol";
+import {MockSequencerFeed} from "test/mocks/MockSequencerFeed.sol";
 
 contract DeployTestnet is Script {
     function setUp() public {}
@@ -16,8 +17,6 @@ contract DeployTestnet is Script {
 
     bytes32 salt = "Testnet";
     uint256 firstDistribution = 1751295600; // Jun 30, 3pm UTC
-
-    address uptimeFeed = address(123);
 
     function run()
         public
@@ -32,11 +31,10 @@ contract DeployTestnet is Script {
     {
         vm.startBroadcast();
 
-        // Configure optimizer settings
-        // vm.store(address(this), bytes32("optimizer"), bytes32("true"));
-        // vm.store(address(this), bytes32("optimizerRuns"), bytes32(uint256(9999)));
-
         // Create contract instances
+        MockSequencerFeed sequencer = new MockSequencerFeed();
+        address uptimeFeed = address(sequencer);
+
         FakeOracle oracle = new FakeOracle();
         oracleAd = address(oracle);
 
@@ -66,3 +64,5 @@ contract DeployTestnet is Script {
         vm.stopBroadcast();
     }
 }
+
+// forge script script/DeployTestnet.s.sol --rpc-url $ARB_SEPOLIA_URL --private-key $PRIVATE_KEY --broadcast --optimize --optimizer-runs 9999 --verify --verifier etherscan --etherscan-api-key $ETHERSCAN_API_KEY
