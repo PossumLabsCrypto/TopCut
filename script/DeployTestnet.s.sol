@@ -17,6 +17,8 @@ contract DeployTestnet is Script {
     bytes32 salt = "Testnet";
     uint256 firstDistribution = 1751295600; // Jun 30, 3pm UTC
 
+    address uptimeFeed = address(123);
+
     function run()
         public
         returns (
@@ -42,19 +44,23 @@ contract DeployTestnet is Script {
         vaultAd = address(vault);
 
         // BTC 1
-        TopCutMarket market1 = new TopCutMarket(oracleAd, vaultAd, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket market1 =
+            new TopCutMarket(oracleAd, uptimeFeed, vaultAd, tradeSize, tradeDuration, firstSettlement);
         market1Ad = address(market1);
 
         // BTC 2
-        TopCutMarket market2 = new TopCutMarket(oracleAd, vaultAd, tradeSize * 10, tradeDuration, firstSettlement);
+        TopCutMarket market2 =
+            new TopCutMarket(oracleAd, uptimeFeed, vaultAd, tradeSize * 10, tradeDuration, firstSettlement);
         market2Ad = address(market2);
 
         // BTC
-        TopCutMarket market3 = new TopCutMarket(oracleAd, vaultAd, tradeSize, tradeDuration * 7, firstSettlement_weekly);
+        TopCutMarket market3 =
+            new TopCutMarket(oracleAd, uptimeFeed, vaultAd, tradeSize, tradeDuration * 7, firstSettlement_weekly);
         market3Ad = address(market3);
 
         // ETH
-        TopCutMarket market4 = new TopCutMarket(oracleAd, vaultAd, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket market4 =
+            new TopCutMarket(oracleAd, uptimeFeed, vaultAd, tradeSize, tradeDuration, firstSettlement);
         market4Ad = address(market4);
 
         vm.stopBroadcast();

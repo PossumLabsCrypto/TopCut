@@ -35,14 +35,17 @@ error ZeroAddress();
 contract TopCutMarket {
     constructor(
         address _oracleContract,
+        address _sequencerUptimeFeed,
         address _topCutVault,
         uint256 _tradeSize,
         uint256 _tradeDuration,
         uint256 _firstSettlementTime
     ) {
         if (_oracleContract == address(0)) revert InvalidConstructor();
+        if (_sequencerUptimeFeed == address(0)) revert InvalidConstructor();
         ORACLE = IChainlink(_oracleContract);
         ORACLE_DECIMALS = ORACLE.decimals();
+        SEQUENCER_UPTIME_FEED = IChainlink(_sequencerUptimeFeed);
 
         if (_topCutVault == address(0)) revert InvalidConstructor();
         TOP_CUT_VAULT = ITopCutVault(_topCutVault);
@@ -68,7 +71,7 @@ contract TopCutMarket {
     // ==                STORAGE                 ==
     // ============================================
     IChainlink public immutable ORACLE;
-    IChainlink private constant SEQUENCER_UPTIME_FEED = IChainlink(0xFdB631F5EE196F0ed6FAa767959853A9F217697D); // liveness feed for Chainlink on Arbitrum
+    IChainlink private immutable SEQUENCER_UPTIME_FEED; // = IChainlink(0xFdB631F5EE196F0ed6FAa767959853A9F217697D); // liveness feed for Chainlink on Arbitrum
     uint256 private constant ORACLE_THRESHOLD_TIME = 3600; // 1h threshold for price freshness & grace period after sequencer reboot
     uint256 private immutable ORACLE_DECIMALS; // Decimals of the oracle price feed
 
@@ -181,10 +184,6 @@ contract TopCutMarket {
     ///@dev Compensate a permissionless keeper for running this function
     function settleCohort() external {
         // CHECKS
-        ///@dev Ensure that the settlement time is reached
-        uint256 settlementTime = nextSettlement;
-        if (block.timestamp < settlementTime) revert CohortActive();
-
         ///@dev Ensure that the L2 sequencer is live and was not restarted just recently
         _checkSequencerStatus();
 
@@ -194,6 +193,10 @@ contract TopCutMarket {
 
         ///@dev Perform validation checks on the oracle feed
         _validatePriceData(roundId, price, updatedAt, answeredInRound);
+
+        ///@dev Ensure that the settlement time is reached
+        uint256 settlementTime = nextSettlement;
+        if (block.timestamp < settlementTime) revert CohortActive();
 
         ///@dev Typecast oracle price to uint256 and normalize to prediction input precision
         uint256 settlementPrice = (uint256(price) * (10 ** PREDICTION_DECIMALS)) / (10 ** ORACLE_DECIMALS);
@@ -362,7 +365,7 @@ contract TopCutMarket {
         }
 
         // Make sure grace period has passed after sequencer comes back up
-        uint256 timeSinceUp = block.timestamp - startedAt;
+        uint256 timeSinceUp = (block.timestamp < startedAt) ? 0 : block.timestamp - startedAt;
         if (timeSinceUp <= ORACLE_THRESHOLD_TIME) {
             revert GracePeriodNotOver();
         }
@@ -373,15 +376,11 @@ contract TopCutMarket {
         internal
         view
     {
-        // Check for stale data
+        // Check for stale data & round completion (round incomplete when updatedAt == 0)
+        // Incomplete rounds will always revert because block.timestamp > (0 + ORACLE_THRESHOLD_TIME)
+        uint256 timeDiff = (block.timestamp < updatedAt) ? 0 : block.timestamp - updatedAt;
+        if (timeDiff > ORACLE_THRESHOLD_TIME) revert StalePrice();
         if (answeredInRound < roundId) revert StalePrice();
-        if (block.timestamp - updatedAt > ORACLE_THRESHOLD_TIME) revert StalePrice();
-
-        // Check for round completion
-        if (updatedAt == 0) revert RoundNotComplete();
-
-        // Ensure the price was received after the settlement time
-        if (updatedAt < nextSettlement) revert StalePrice();
 
         // Check for valid price
         if (price <= 0) revert InvalidPrice();

@@ -21,6 +21,9 @@ contract DeployDailyMarkets is Script {
     // address linkFeed = 0x86E53CF1B870786351Da77A57575e79CB55812CB;
     // address arbFeed = 0xb2A824043730FE05F3DA2efaFa1CBbe83fa548D6;
 
+    // Sequencer uptime feed of Chainlink on Arbitrum
+    address uptimeFeed = 0xFdB631F5EE196F0ed6FAa767959853A9F217697D;
+
     function run() public returns (address[] memory marketAddresses) {
         vm.startBroadcast();
 
@@ -29,13 +32,14 @@ contract DeployDailyMarkets is Script {
         vm.store(address(this), bytes32("optimizerRuns"), bytes32(uint256(9999)));
 
         // Create contract instances
-        TopCutMarket marketBTC = new TopCutMarket(btcFeed, vault, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket marketBTC = new TopCutMarket(btcFeed, uptimeFeed, vault, tradeSize, tradeDuration, firstSettlement);
         marketAddresses[0] = address(marketBTC);
 
-        TopCutMarket marketETH = new TopCutMarket(ethFeed, vault, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket marketETH = new TopCutMarket(ethFeed, uptimeFeed, vault, tradeSize, tradeDuration, firstSettlement);
         marketAddresses[1] = address(marketETH);
 
-        TopCutMarket marketDOGE = new TopCutMarket(dogeFeed, vault, tradeSize, tradeDuration, firstSettlement);
+        TopCutMarket marketDOGE =
+            new TopCutMarket(dogeFeed, uptimeFeed, vault, tradeSize, tradeDuration, firstSettlement);
         marketAddresses[2] = address(marketDOGE);
 
         vm.stopBroadcast();
