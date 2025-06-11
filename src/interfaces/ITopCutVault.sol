@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.19;
+pragma solidity 0.8.24;
 
 interface ITopCutVault {
     function AFFILIATE_NFT() external view returns (address);

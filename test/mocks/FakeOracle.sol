@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.19;
+pragma solidity 0.8.24;
 
 import {ITopCutNFT} from "src/interfaces/ITopCutNFT.sol";
 import {ITopCutMarket} from "src/interfaces/ITopCutMarket.sol";

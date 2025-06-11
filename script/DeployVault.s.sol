@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.19;
+pragma solidity 0.8.24;
 
 import {Script, console} from "lib/forge-std/src/Script.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";

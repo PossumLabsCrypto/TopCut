@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity =0.8.19;
+pragma solidity 0.8.24;
 
 import {Script, console} from "lib/forge-std/src/Script.sol";
 import {TopCutMarket} from "src/TopCutMarket.sol";
@@ -11,7 +11,7 @@ contract DeployTestnet is Script {
 
     uint256 tradeSize = 1e16; //  0.01 ETH
     uint256 tradeDuration = 86400; // 24 hours
-    uint256 firstSettlement = 1749567600; // Jun 10, 3pm UTC
+    uint256 firstSettlement = 1749826800; // Jun 13, 3pm UTC
     uint256 firstSettlement_weekly = 1751295600; // Jun 30, 3pm UTC
 
     bytes32 salt = "Testnet";
