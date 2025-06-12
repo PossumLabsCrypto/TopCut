@@ -14,7 +14,7 @@ error InsufficientPayment();
  * @notice Holders of any TopCut NFT can earn affiliate rewards by referring traders
  * Affiliate rewards accrue in Affiliate Points (AP) in the TopCut Vault
  * AP can be burned for ETH from the TopCut Vault
- * Affiliate NFTs can be minted by paying the increasing minting price in ETH
+ * Affiliate NFTs can be minted by paying the minting price in ETH
  */
 contract TopCutNFT is ERC721URIStorage {
     constructor(string memory _name, string memory _symbol) ERC721(_name, _symbol) {
