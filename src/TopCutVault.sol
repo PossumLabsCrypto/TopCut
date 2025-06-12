@@ -279,7 +279,7 @@ contract TopCutVault {
         // INTERACTIONS
         ///@dev Transfer the token balance to the caller
         ///@dev Caller is expected to be MEV professional and perform additional checks in case of exotic token
-        IERC20(_token).transfer(msg.sender, balanceToken);
+        IERC20(_token).safeTransfer(msg.sender, balanceToken);
     }
 
     receive() external payable {}
