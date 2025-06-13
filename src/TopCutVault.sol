@@ -157,7 +157,10 @@ contract TopCutVault {
     ///@dev Affiliate Points are earned by referring new traders and are recurring based on trading volume of referrees
     function quoteAffiliateReward(uint256 _pointsRedeemed) public view returns (uint256 ethReward) {
         uint256 ethBalance = address(this).balance;
-        uint256 newTotalAffiliatePoints = totalRedeemedAP + _pointsRedeemed;
+
+        ///@dev Calculate the denominator & prevent extraction via flashloan if the balance is larger than totalRedeemedAP
+        uint256 newTotalAffiliatePoints =
+            (totalRedeemedAP < ethBalance) ? ethBalance + _pointsRedeemed : totalRedeemedAP + _pointsRedeemed;
 
         ///@dev Calculate the ETH rewards received by the affiliate after pool protection (slippage as in AMM)
         ethReward = (ethBalance * _pointsRedeemed) / newTotalAffiliatePoints;
