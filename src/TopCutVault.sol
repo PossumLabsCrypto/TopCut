@@ -143,7 +143,7 @@ contract TopCutVault {
             // INTERACTIONS
             ///@dev Send the ETH reward to the former points leader (recipient)
             ///@dev Keep ETH in the contract if the transfer fails but continue anyways (prevent DOS)
-            (bool sent,) = payable(_recipient).call{value: loyaltyDistribution}("");
+            (bool sent,) = payable(_recipient).call{value: loyaltyDistribution, gas: 300000}("");
             if (!sent) loyaltyDistribution = 0;
 
             emit LoyaltyRewardDistributed(_recipient, loyaltyDistribution);
