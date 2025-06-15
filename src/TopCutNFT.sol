@@ -33,8 +33,7 @@ contract TopCutNFT is ERC721URIStorage {
 
     uint256 public constant MINT_FEE_ETH = 1e18; // 1 ETH per mint
     address public immutable TOPCUT_VAULT;
-    string public metadataURI = "420g02n230f203f"; ////////// -------------------->>> UPDATE IPFS METADATA
-
+    string public metadataURI = "ipfs://bafkreicoqrzwv5stamnrm3ryec2hi6zj6yjeqvcr5b7c4qrm22csznh6jm";
     uint256 public totalSupply;
 
     // ============================================

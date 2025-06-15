@@ -15,6 +15,7 @@ import {BrokenOracle} from "test/mocks/BrokenOracle.sol";
 import {FakeOracle} from "test/mocks/FakeOracle.sol";
 import {DelayedOracle} from "test/mocks/DelayedOracle.sol";
 import {SequencerOutage} from "test/mocks/SequencerOutage.sol";
+import {GasWasteContract} from "test/mocks/GasWasteContract.sol";
 
 // ============================================
 error BrokenOraclePrice();
@@ -70,12 +71,13 @@ contract TopCutTest is Test {
     ITopCutNFT refNFT;
     TopCutVault vault;
 
-    DOScontract dosContract;
     TopCutMarket brokenOracleMarket;
     TopCutMarket fakeOracleMarket;
     TopCutMarket fakeSequencerMarket;
     TopCutMarket delayedOracleMarket;
+    DOScontract dosContract;
     SequencerOutage sequencerOutageFeed;
+    GasWasteContract gasWaster;
 
     // time
     uint256 oneYear = 60 * 60 * 24 * 365;
@@ -116,7 +118,7 @@ contract TopCutTest is Test {
     uint256 constant INITIAL_REDEEMED_POINTS = 1e18;
     uint256 constant EXTRACTION_FEE_ETH = 1e19;
 
-    string metadataURI = "420g02n230f203f";
+    string metadataURI = "ipfs://bafkreicoqrzwv5stamnrm3ryec2hi6zj6yjeqvcr5b7c4qrm22csznh6jm";
     uint256 constant MINT_FEE_ETH = 1e18;
 
     //////////////////////////////////////
@@ -162,6 +164,8 @@ contract TopCutTest is Test {
         );
 
         dosContract = new DOScontract(address(psm), address(vault), address(fakeOracleMarket), address(refNFT));
+
+        gasWaster = new GasWasteContract(address(vault));
 
         vm.deal(Alice, aliceETH);
         vm.deal(Bob, bobETH);
@@ -335,7 +339,7 @@ contract TopCutTest is Test {
         assertEq(vault.loyaltyPoints(Alice), 0);
         assertEq(vault.nextDistributionTime(), epochEnd + DISTRIBUTION_INTERVAL);
 
-        // Scenario 2: Winner (dosContract) cannot accept ETH (no balance change)
+        // Scenario 2: Winner (dosContract) cannot accept ETH (no reward distribution)
         vm.prank(Alice);
         vault.updatePoints{value: pointsToContract}(address(dosContract), 3);
 
@@ -352,6 +356,27 @@ contract TopCutTest is Test {
         );
         assertEq(address(dosContract).balance, 0);
         assertEq(address(vault).balance, (vaultBalancePreDistro * 99) / 100 + (2 * pointsToContract));
+        assertEq(vault.loyaltyPointsLeader(), address(0));
+
+        // Scenario 3: Winner is malicious contract (gasWaster)
+        // Transaction succeeds but no reward distribution because ETH transfer fails
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToContract}(address(gasWaster), 3);
+
+        assertEq(vault.loyaltyPointsLeader(), address(gasWaster));
+
+        // Jump to a time after the nextDistributionTime
+        vm.warp(vault.nextDistributionTime() + 1);
+
+        vm.prank(Alice);
+        vault.updatePoints{value: pointsToContract}(address(gasWaster), 3);
+
+        assertEq(
+            Alice.balance, aliceETH - vaultBalancePreDistro + (vaultBalancePreDistro / 100) - (4 * pointsToContract)
+        );
+        assertEq(address(dosContract).balance, 0);
+        assertEq(address(vault).balance, (vaultBalancePreDistro * 99) / 100 + (4 * pointsToContract));
+        assertEq(vault.loyaltyPointsLeader(), address(0));
     }
 
     // Revert cases
@@ -383,7 +408,9 @@ contract TopCutTest is Test {
         uint256 points = vault.affiliatePoints(40);
         uint256 balanceVault = address(vault).balance;
         uint256 expectedETH = vault.quoteAffiliateReward(points);
-        uint256 expectedManualCalc = (balanceVault * pointLoad) / (pointLoad + INITIAL_REDEEMED_POINTS); // 50% of 1.1 ETH
+        uint256 divisor =
+            (INITIAL_REDEEMED_POINTS > balanceVault) ? pointLoad + INITIAL_REDEEMED_POINTS : pointLoad + balanceVault;
+        uint256 expectedManualCalc = (balanceVault * pointLoad) / divisor;
 
         assertEq(expectedETH, expectedManualCalc);
 
