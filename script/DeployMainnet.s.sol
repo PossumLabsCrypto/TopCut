@@ -16,15 +16,15 @@ contract DeployMainnet is Script {
 
     uint256 firstSettlement_daily = 1752678000; // July 16, 3pm UTC
     uint256 firstSettlement_weekly_Monday = 1753110000; // July 21, 3pm UTC
-    uint256 firstSettlement_weekly_Tuesday = 1753196400; // July 22, 3pm UTC
+    // uint256 firstSettlement_weekly_Tuesday = 1753196400; // July 22, 3pm UTC
     uint256 firstSettlement_weekly_Wednesday = 1752678000; // July 16, 3pm UTC
-    uint256 firstSettlement_weekly_Thursday = 1752764400; // July 17, 3pm UTC
+    // uint256 firstSettlement_weekly_Thursday = 1752764400; // July 17, 3pm UTC
     uint256 firstSettlement_weekly_Friday = 1752850800; // July 18, 3pm UTC
-    uint256 firstSettlement_weekly_Saturday = 1752937200; // July 19, 3pm UTC
-    uint256 firstSettlement_weekly_Sunday = 1753023600; // July 20, 3pm UTC
+    // uint256 firstSettlement_weekly_Saturday = 1752937200; // July 19, 3pm UTC
+    // uint256 firstSettlement_weekly_Sunday = 1753023600; // July 20, 3pm UTC
 
     bytes32 salt = "DeFiPrecisionMarkets";
-    uint256 firstDistribution = 1756612800; // Aug 31, 4am UTC
+    uint256 firstLoyaltyDistribution = 1756612800; // Aug 31, 4am UTC
 
     // L2 sequencer uptime feed of Chainlink on Arbitrum
     address uptimeFeed = 0xFdB631F5EE196F0ed6FAa767959853A9F217697D;
@@ -44,7 +44,7 @@ contract DeployMainnet is Script {
         vm.startBroadcast();
 
         // Create contract instances
-        TopCutVault vaultContract = new TopCutVault(salt, firstDistribution);
+        TopCutVault vaultContract = new TopCutVault(salt, firstLoyaltyDistribution);
         vault = address(vaultContract);
 
         // BTC daily
