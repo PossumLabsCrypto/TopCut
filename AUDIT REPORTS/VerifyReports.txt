@@ -1,0 +1,11 @@
+Latest:
+MarioPoneder (SR @spearbit, @zenith256, @SecurityOak & http://trust-security.xyz | Judge @code4rena & @cantinaxyz)
+https://gist.github.com/MarioPoneder/d2a6a1d6a495d22790795c0302c3dd55
+
+Second:
+Carrotsmuggler (Top performer in multiple audit competitions across platforms)
+https://github.com/carrotsmuggler/carotsmuggler-audit-portfolio
+
+First:
+MahdiRostami (Rank #1 auditor by findings on Hats Finance, Security auditor @accretion_xyz)
+https://github.com/0xmahdirostami/audits/blob/main/Private-audit/PossumTopCut/report.pdf
