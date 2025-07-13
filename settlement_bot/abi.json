@@ -1,0 +1,533 @@
+[
+    {
+        "type": "constructor",
+        "inputs": [
+            {
+                "name": "_oracleContract",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_sequencerUptimeFeed",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_topCutVault",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_tradeSize",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_tradeDuration",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_firstSettlementTime",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "ORACLE",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "contract IChainlink"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "PREDICTION_DECIMALS",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "SHARE_FRONTEND",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "SHARE_KEEPER",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "SHARE_PRECISION",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "SHARE_VAULT",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "TOP_CUT_VAULT",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "contract ITopCutVault"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "TRADE_DURATION",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "TRADE_SIZE",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "WIN_SIZE",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "activeCohortID",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "castPrediction",
+        "inputs": [
+            {
+                "name": "_frontend",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_refID",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_price",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_cohortID",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "payable"
+    },
+    {
+        "type": "function",
+        "name": "claim",
+        "inputs": [],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "claimAmounts",
+        "inputs": [
+            {
+                "name": "trader",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "claim",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "claimKeeperReward",
+        "inputs": [
+            {
+                "name": "_recipient",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_amountETH",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "cohortSize_1",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "cohortSize_2",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "keeperRewards",
+        "inputs": [
+            {
+                "name": "keeper",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "claim",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "nextSettlement",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "settleCohort",
+        "inputs": [],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "totalPendingClaims",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "tradesCohort_1",
+        "inputs": [
+            {
+                "name": "tradeID",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "predictionOwner",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "prediction",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "tradesCohort_2",
+        "inputs": [
+            {
+                "name": "tradeID",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "predictionOwner",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "prediction",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "event",
+        "name": "CohortSettled",
+        "inputs": [
+            {
+                "name": "cohortSize",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "winners",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "settlementTime",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "PredictionPosted",
+        "inputs": [
+            {
+                "name": "user",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "settlementTime",
+                "type": "uint256",
+                "indexed": true,
+                "internalType": "uint256"
+            },
+            {
+                "name": "price",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "PrizesClaimed",
+        "inputs": [
+            {
+                "name": "user",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "claimedAmount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "error",
+        "name": "CohortActive",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "CohortFull",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "FailedToSendFrontendReward",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "FailedToSendKeeperReward",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "FailedToSendWinnerReward",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "GracePeriodNotOver",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "InsufficientBalance",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "InvalidAmount",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "InvalidCohortID",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "InvalidConstructor",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "InvalidPrice",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "InvalidTradeSize",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "NoClaims",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "SequencerDown",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "StalePrice",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "WaitingToSettle",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "ZeroAddress",
+        "inputs": []
+    }
+]
