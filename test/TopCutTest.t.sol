@@ -106,6 +106,7 @@ contract TopCutTest is Test {
     IChainlink constant oracle = IChainlink(BTC_USD_CHAINLINK_ORACLE);
     uint256 constant ORACLE_RESPONSE_AT_FORK_HEIGHT = 11060800999999; // 110608.001 BTC/USD
     uint256 constant MAX_AP_REDEEMED = 5e22; // 50k points
+    uint256 constant KEEPER_REWARD_UNIT = 1e14; // Multiplied by the cohortSize to get the reward for settlement
     uint256 constant MIN_KEEPER_REWARD = 1e15; // min 0.001 ETH reward for settling a cohort
 
     bytes32 constant SALT = "1245678";
@@ -179,7 +180,7 @@ contract TopCutTest is Test {
     function helper_predictionGrid() public {
         uint256 predictionStartBob = 109000e18;
         uint256 predictionStartAlice = 110330e18;
-        uint256 validCohortID = (market.activeCohortID() == 2) ? 1 : 2;
+        uint256 validCohortID = (fakeOracleMarket.activeCohortID() == 2) ? 1 : 2;
 
         for (uint256 i = 0; i < 23; i++) {
             vm.prank(Bob);
@@ -222,7 +223,6 @@ contract TopCutTest is Test {
         assertEq(market.SHARE_PRECISION(), SHARE_PRECISION);
         assertEq(market.SHARE_VAULT(), SHARE_VAULT);
         assertEq(market.SHARE_FRONTEND(), SHARE_FRONTEND);
-        assertEq(market.SHARE_KEEPER(), SHARE_KEEPER);
 
         assertEq(address(market.TOP_CUT_VAULT()), address(vault));
         assertEq(market.TRADE_DURATION(), TRADE_DURATION);
@@ -939,6 +939,25 @@ contract TopCutTest is Test {
         fakeOracleMarket.claim();
     }
 
+    // test the view function to calculate keeper rewards
+    function testSuccess_getSettlementReward() public {
+        // Scenario 1: No predictions (return minimum)
+        uint256 expectedReward = MIN_KEEPER_REWARD;
+        uint256 reward = fakeOracleMarket.getSettlementReward();
+
+        assertEq(expectedReward, reward);
+
+        // Scenario 2: 25 predictions (return 25 * unit)
+        helper_predictionGrid();
+        vm.warp(fakeOracleMarket.nextSettlement());
+        fakeOracleMarket.settleCohort();
+
+        expectedReward = 25 * KEEPER_REWARD_UNIT;
+        reward = fakeOracleMarket.getSettlementReward();
+
+        assertEq(expectedReward, reward);
+    }
+
     // test the keeper reward claiming function
     function testSuccess_claimKeeperReward() public {
         helper_predictionGrid();
@@ -955,12 +974,22 @@ contract TopCutTest is Test {
 
     // Revert cases
     function testRevert_claimKeeperReward() public {
-        // Scenario 1: claim more than contract balance
+        // Scenario 1: recipient is zero address
+        vm.prank(Charlie);
+        vm.expectRevert(ZeroAddress.selector);
+        market.claimKeeperReward(address(0), 100000);
+
+        // Scenario 2: claim 0 amount
+        vm.prank(Charlie);
+        vm.expectRevert(InvalidAmount.selector);
+        market.claimKeeperReward(Charlie, 0);
+
+        // Scenario 3: claim more than contract balance
         vm.prank(Charlie);
         vm.expectRevert(InsufficientBalance.selector);
         market.claimKeeperReward(Charlie, 100000);
 
-        // Scenario 2: claim more than pending rewards of keeper
+        // Scenario 4: claim more than pending rewards of keeper
         helper_predictionGrid(); // 25 predictions -> 0.0025 ETH reward
         vm.warp(fakeOracleMarket.nextSettlement());
 
@@ -970,7 +999,7 @@ contract TopCutTest is Test {
         vm.expectRevert(InvalidAmount.selector);
         fakeOracleMarket.claimKeeperReward(Charlie, 1e16);
 
-        // Scenario 3: recipient cannot receive ETH
+        // Scenario 5: recipient cannot receive ETH
         vm.expectRevert(FailedToSendKeeperReward.selector);
         fakeOracleMarket.claimKeeperReward(address(dosContract), 1234);
 

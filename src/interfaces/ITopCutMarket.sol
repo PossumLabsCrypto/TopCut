@@ -7,7 +7,6 @@ interface ITopCutMarket {
     function SHARE_PRECISION() external view returns (uint256);
     function SHARE_VAULT() external view returns (uint256);
     function SHARE_FRONTEND() external view returns (uint256);
-    function SHARE_KEEPER() external view returns (uint256);
 
     function TOP_CUT_VAULT() external view returns (address);
     function TRADE_DURATION() external view returns (uint256);
@@ -35,4 +34,7 @@ interface ITopCutMarket {
     function castPrediction(address _frontend, uint256 _refID, uint256 _price, uint256 _cohortID) external payable;
     function settleCohort() external;
     function claim() external;
+
+    function getSettlementReward() external view returns (uint256 keeperReward);
+    function claimKeeperReward(address _recipient, uint256 _amountETH) external;
 }

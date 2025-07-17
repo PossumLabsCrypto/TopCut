@@ -19,7 +19,6 @@ error InvalidConstructor();
 error InvalidPrice();
 error InvalidTradeSize();
 error NoClaims();
-error RoundNotComplete();
 error SequencerDown();
 error StalePrice();
 error WaitingToSettle();
@@ -50,7 +49,7 @@ contract TopCutMarket {
         if (_topCutVault == address(0)) revert InvalidConstructor();
         TOP_CUT_VAULT = ITopCutVault(_topCutVault);
 
-        if (_tradeSize < 1e16) revert InvalidConstructor(); // min 0.01
+        if (_tradeSize < (KEEPER_REWARD_UNIT * 100)) revert InvalidConstructor(); // keeper reward can at maximum be 1% of trade size
         TRADE_SIZE = _tradeSize;
         WIN_SIZE = _tradeSize * 10;
 
@@ -64,7 +63,6 @@ contract TopCutMarket {
 
         VAULT_REWARD = (TRADE_SIZE * SHARE_VAULT) / SHARE_PRECISION;
         FRONTEND_REWARD = (TRADE_SIZE * SHARE_FRONTEND) / SHARE_PRECISION;
-        KEEPER_REWARD_UNIT = (TRADE_SIZE * SHARE_KEEPER) / SHARE_PRECISION;
     }
 
     // ============================================
@@ -80,12 +78,11 @@ contract TopCutMarket {
     uint256 public constant SHARE_PRECISION = 1000;
     uint256 public constant SHARE_VAULT = 50; // 5% of trade volume
     uint256 public constant SHARE_FRONTEND = 30; // 3% of trade volume
-    uint256 public constant SHARE_KEEPER = 10; // 1% of trade volume
 
+    uint256 private constant KEEPER_REWARD_UNIT = 1e14; // Multiplied by the cohortSize to get the reward for settlement
+    uint256 private constant MIN_KEEPER_REWARD = 1e15; // min 0.001 ETH reward for settling a cohort
     uint256 private immutable VAULT_REWARD;
     uint256 private immutable FRONTEND_REWARD;
-    uint256 private immutable KEEPER_REWARD_UNIT;
-    uint256 private constant MIN_KEEPER_REWARD = 1e15; // min 0.001 ETH reward for settling a cohort
 
     ITopCutVault public immutable TOP_CUT_VAULT;
     uint256 public immutable TRADE_DURATION; // The duration when no new trades are accepted before a cohort is settled
@@ -263,6 +260,10 @@ contract TopCutMarket {
         ///@dev Update the settlement time for the next round
         nextSettlement = settlementTime + TRADE_DURATION;
 
+        ///@dev Increase keeper rewards based on the number of traders in the Cohort & ensure a minimum compensation
+        uint256 keeperReward = getSettlementReward();
+        keeperRewards[msg.sender] += keeperReward;
+
         ///@dev Transition the active cohort 1 -> 2 or 2 -> 1 and reset the settled cohort size
         if (activeID == 2) {
             activeCohortID = 1;
@@ -273,14 +274,19 @@ contract TopCutMarket {
         }
 
         // INTERACTIONS
-        ///@dev Increase keeper rewards based on the number of traders in the Cohort & ensure a minimum compensation
-        uint256 keeperReward = (_cohortSize * KEEPER_REWARD_UNIT < MIN_KEEPER_REWARD)
-            ? MIN_KEEPER_REWARD
-            : _cohortSize * KEEPER_REWARD_UNIT;
-        keeperRewards[msg.sender] += keeperReward;
-
         ///@dev Emit event that the cohort was settled
         emit CohortSettled(_cohortSize, cohortWinners, settlementTime);
+    }
+
+    ///@notice Calculate the reward for permissionless settlement
+    function getSettlementReward() public view returns (uint256 keeperReward) {
+        ///@dev Get the cohort size of the active cohort
+        uint256 _cohortSize = (activeCohortID == 2) ? cohortSize_2 : cohortSize_1;
+
+        ///@dev Calculate and return the reward for settlement
+        keeperReward = (_cohortSize * KEEPER_REWARD_UNIT < MIN_KEEPER_REWARD)
+            ? MIN_KEEPER_REWARD
+            : _cohortSize * KEEPER_REWARD_UNIT;
     }
 
     ///@notice Enable users to claim their pending prizes
@@ -315,6 +321,10 @@ contract TopCutMarket {
     ///@dev No event because this function is only relevant for experts and does not need to be tracked
     function claimKeeperReward(address _recipient, uint256 _amountETH) external {
         // CHECKS
+        ///@dev Standard checks
+        if (_recipient == address(0)) revert ZeroAddress();
+        if (_amountETH == 0) revert InvalidAmount();
+
         ///@dev Check if there is sufficient ETH in the contract
         if (_amountETH > address(this).balance) revert InsufficientBalance();
 
