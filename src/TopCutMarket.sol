@@ -113,7 +113,7 @@ contract TopCutMarket {
     // ==                EVENTS                  ==
     // ============================================
     event PredictionPosted(address indexed user, uint256 indexed settlementTime, uint256 price);
-    event CohortSettled(uint256 cohortSize, uint256 winners, uint256 settlementTime);
+    event CohortSettled(uint256 cohortSize, uint256 winners, uint256 settlementPrice, uint256 settlementTime);
     event PrizesClaimed(address indexed user, uint256 claimedAmount);
 
     // ============================================
@@ -275,7 +275,7 @@ contract TopCutMarket {
 
         // INTERACTIONS
         ///@dev Emit event that the cohort was settled
-        emit CohortSettled(_cohortSize, cohortWinners, settlementTime);
+        emit CohortSettled(_cohortSize, cohortWinners, settlementPrice, settlementTime);
     }
 
     ///@notice Calculate the reward for permissionless settlement
