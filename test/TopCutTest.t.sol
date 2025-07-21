@@ -268,7 +268,7 @@ contract TopCutTest is Test {
             BTC_USD_CHAINLINK_ORACLE, uptimeFeedReal, address(0), TRADE_SIZE, TRADE_DURATION, FIRST_SETTLEMENT
         );
 
-        // Invalid trade size
+        // Invalid trade size leading to invalid fee structure due to dependency on constant KEEPER_REWARD_UNIT
         vm.expectRevert(InvalidConstructor.selector);
         new TopCutMarket(BTC_USD_CHAINLINK_ORACLE, uptimeFeedReal, address(vault), 11, TRADE_DURATION, FIRST_SETTLEMENT);
 

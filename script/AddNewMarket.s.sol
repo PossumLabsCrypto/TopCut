@@ -7,8 +7,8 @@ import {TopCutMarket} from "src/TopCutMarket.sol";
 contract AddNewMarket is Script {
     function setUp() public {}
 
-    uint256 tradeSize = 1e17; //  0.1 ETH
-    uint256 firstSettlement = 1753110000; // July 21, 3pm UTC
+    uint256 tradeSize = 5e16; //  0.05 ETH
+    uint256 firstSettlement = 1753196400; // July 22, 3pm UTC
 
     address vault = 0x3cfc3CBA1B4aAF969057F590D23efe46848F4270; // Arbitrum
     uint256 tradeDuration_daily = 86400; // 24 hours
@@ -28,7 +28,6 @@ contract AddNewMarket is Script {
     function run() public returns (address market) {
         vm.startBroadcast();
 
-        // BTC daily 0.1 ETH
         TopCutMarket market_ =
             new TopCutMarket(btcFeed, uptimeFeed, vault, tradeSize, tradeDuration_daily, firstSettlement);
         market = address(market_);

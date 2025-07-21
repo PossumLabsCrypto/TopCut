@@ -49,7 +49,12 @@ contract TopCutMarket {
         if (_topCutVault == address(0)) revert InvalidConstructor();
         TOP_CUT_VAULT = ITopCutVault(_topCutVault);
 
-        if (_tradeSize < (KEEPER_REWARD_UNIT * 100)) revert InvalidConstructor(); // keeper reward can at maximum be 1% of trade size
+        ///@dev Given 1 in 11 (9%) fee potential, calculate how much reward can be allocated to keepers per unit (prediction)
+        uint256 feeShareSum = SHARE_VAULT + SHARE_FRONTEND; // e.g. 80
+        uint256 maxFeeRemainder = 90 - feeShareSum; // e.g. 10 (1%)
+        uint256 maxKeeperRewardUnit = (maxFeeRemainder * _tradeSize) / SHARE_PRECISION;
+
+        if (KEEPER_REWARD_UNIT > maxKeeperRewardUnit) revert InvalidConstructor(); // keeper reward + fees cannot exceed 9% of tradeSize
         TRADE_SIZE = _tradeSize;
         WIN_SIZE = _tradeSize * 10;
 
