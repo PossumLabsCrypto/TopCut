@@ -168,6 +168,9 @@ contract TopCutMarket {
             cohortSize_2 = tradeCounter + 1;
         }
 
+        ///@dev Add the trade duration to the current settlement time to attribute this prediction to the next cohort via event
+        settlementTime += TRADE_DURATION;
+
         // INTERACTIONS
         ///@dev Update Loyalty Points and Affiliate Points in the TopCut Vault
         ///@dev Send the Vault rev share with the function call
@@ -330,8 +333,10 @@ contract TopCutMarket {
         if (_recipient == address(0)) revert ZeroAddress();
         if (_amountETH == 0) revert InvalidAmount();
 
-        ///@dev Check if there is sufficient ETH in the contract
-        if (_amountETH > address(this).balance) revert InsufficientBalance();
+        ///@dev Check for sufficient ETH in the contract when considering pending claims
+        uint256 withdrawable =
+            (totalPendingClaims < address(this).balance) ? address(this).balance - totalPendingClaims : 0;
+        if (_amountETH > withdrawable) revert InsufficientBalance();
 
         ///@dev Validate the amount to be claimed by the keeper
         uint256 rewards = keeperRewards[msg.sender];
