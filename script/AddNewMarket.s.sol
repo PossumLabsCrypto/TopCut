@@ -7,8 +7,8 @@ import {TopCutMarket} from "src/TopCutMarket.sol";
 contract AddNewMarket is Script {
     function setUp() public {}
 
-    uint256 tradeSize = 5e16; //  0.05 ETH
-    uint256 firstSettlement = 1753196400; // July 22, 3pm UTC
+    uint256 tradeSize = 1e16; //  0.01 ETH
+    uint256 firstSettlement = 1755010800; // Aug 07, 3pm UTC
 
     address vault = 0x3cfc3CBA1B4aAF969057F590D23efe46848F4270; // Arbitrum
     uint256 tradeDuration_daily = 86400; // 24 hours
@@ -19,7 +19,7 @@ contract AddNewMarket is Script {
 
     // Chainlink oracle feeds on Arbitrum
     address btcFeed = 0x6ce185860a4963106506C203335A2910413708e9;
-    //address ethFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612;
+    // address ethFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612;
     //address dogeFeed = 0x9A7FB1b3950837a8D9b40517626E11D4127C098C;
     //address pepeFeed = 0x02DEd5a7EDDA750E3Eb240b54437a54d57b74dBE;
     //address linkFeed = 0x86E53CF1B870786351Da77A57575e79CB55812CB;
@@ -29,7 +29,7 @@ contract AddNewMarket is Script {
         vm.startBroadcast();
 
         TopCutMarket market_ =
-            new TopCutMarket(btcFeed, uptimeFeed, vault, tradeSize, tradeDuration_daily, firstSettlement);
+            new TopCutMarket(btcFeed, uptimeFeed, vault, tradeSize, tradeDuration_weekly, firstSettlement);
         market = address(market_);
 
         vm.stopBroadcast();
